@@ -20,27 +20,27 @@ namespace PdfLibrary.Editing;
 /// same distinction <see cref="FileSpecNameRepairCandidate"/> draws against
 /// <see cref="FileSpecNameRepair"/> -- or <see langword="null"/> when this configuration's
 /// <c>/Name</c> already satisfies 6.9 and only its <c>/AS</c> is at fault.</para></summary>
-public sealed record OptionalContentRepairCandidate(
+internal sealed record OptionalContentRepairCandidate(
     string Configuration, string? NameToWrite, bool WouldDeleteAutoState);
 
 /// <summary>One 6.9 defect on the configuration at <see cref="Configuration"/> that this editor will
 /// NOT repair, with the user-facing sentence saying why. A plain reason string rather than a
 /// refusal-kind enum, for the same reason <see cref="StreamFilterRefusal"/> is one.</summary>
-public sealed record OptionalContentRefusal(string Configuration, string Reason);
+internal sealed record OptionalContentRefusal(string Configuration, string Reason);
 
 /// <summary>Read-only classification of every optional-content configuration in the document against
 /// ISO 19005-2/3 6.9. Nothing has been written.</summary>
-public sealed record OptionalContentRepairPreview(
+internal sealed record OptionalContentRepairPreview(
     IReadOnlyList<OptionalContentRepairCandidate> Candidates,
     IReadOnlyList<OptionalContentRefusal> Refused);
 
 /// <summary>One configuration <see cref="PdfDocumentEditor.RepairOptionalContent"/> actually edited.
 /// Past tense, against <see cref="OptionalContentRepairCandidate"/>'s conditional.</summary>
-public sealed record OptionalContentRepair(
+internal sealed record OptionalContentRepair(
     string Configuration, string? NameWritten, bool DeletedAutoState);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairOptionalContent"/> did and declined to do.</summary>
-public sealed record OptionalContentRepairReport(
+internal sealed record OptionalContentRepairReport(
     IReadOnlyList<OptionalContentRepair> Applied,
     IReadOnlyList<OptionalContentRefusal> Refused);
 
@@ -264,7 +264,7 @@ public sealed partial class PdfDocumentEditor
     /// answer; there is no idempotency guard to trip because nothing here is ever written. This is what
     /// a Pellucid domain's <c>Propose</c> calls -- <c>Propose</c> must never call a mutating write
     /// counterpart to learn its answer, which a sibling domain once did and had graded Critical.</summary>
-    public OptionalContentRepairPreview PreviewOptionalContentRepairs()
+    internal OptionalContentRepairPreview PreviewOptionalContentRepairs()
     {
         var edits = new List<OptionalContentEdit>();
         var refusals = new List<OptionalContentRefusal>();
@@ -306,7 +306,7 @@ public sealed partial class PdfDocumentEditor
     /// they are dropped by the writer's own reachability walk (<c>ObjectGraphWalker</c>, the default
     /// <c>RemoveOrphans</c>), the same mechanism <c>RepairAnnotationTypes</c> relies on for a removed
     /// annotation's <c>/3DD</c>.</para></summary>
-    public OptionalContentRepairReport RepairOptionalContent()
+    internal OptionalContentRepairReport RepairOptionalContent()
     {
         var edits = new List<OptionalContentEdit>();
         var refusals = new List<OptionalContentRefusal>();

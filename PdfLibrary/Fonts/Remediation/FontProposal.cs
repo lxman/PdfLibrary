@@ -3,7 +3,7 @@ namespace PdfLibrary.Fonts.Remediation;
 /// <summary>What the planner proposes doing to one font for one rule. Data only — applying a
 /// proposal is <see cref="Editing.PdfDocumentEditor"/>'s job, and the separation is what lets a
 /// caller stage a proposal without writing anything.</summary>
-public abstract record FontProposal(FontId Font, string RuleId);
+internal abstract record FontProposal(FontId Font, string RuleId);
 
 /// <summary>
 /// Write a <c>/ToUnicode</c> CMap. <paramref name="Provable"/> holds mappings DERIVED from glyph
@@ -13,7 +13,7 @@ public abstract record FontProposal(FontId Font, string RuleId);
 /// <para>A proposal with entries in both is the normal case and does NOT resolve the finding on its
 /// own. Callers must not report it as a completed fix.</para>
 /// </summary>
-public sealed record ToUnicodeProposal(
+internal sealed record ToUnicodeProposal(
     FontId Font,
     string RuleId,
     IReadOnlyDictionary<int, string> Provable,
@@ -27,7 +27,7 @@ public sealed record ToUnicodeProposal(
 /// direct dictionary, an unparseable program, a substitute that is not installed. Rendering them
 /// identically would let a machine-specific gap read as deliberate policy.</para>
 /// </summary>
-public sealed record DeclineProposal(
+internal sealed record DeclineProposal(
     FontId Font, string RuleId, string Reason) : FontProposal(Font, RuleId);
 
 /// <summary>
@@ -40,7 +40,7 @@ public sealed record DeclineProposal(
 /// sees must name the face that will actually be written (design §7), and a fuzzy system-font locator
 /// can resolve to something other than what was asked for.</para>
 /// </summary>
-public sealed record EmbedProposal(
+internal sealed record EmbedProposal(
     FontId Font, string RuleId,
     string SourceDescription,
     byte[] Program, FontProgramFormat Format) : FontProposal(Font, RuleId);
@@ -57,7 +57,7 @@ public sealed record EmbedProposal(
 /// <para>Both sets are enumerated from the program by <c>SubsetProgramGlyphs</c>, the same code the
 /// rule compares against, so applying this proposal necessarily satisfies the rule.</para>
 /// </summary>
-public sealed record RegenerateDeclarationProposal(
+internal sealed record RegenerateDeclarationProposal(
     FontId Font, string RuleId,
     IReadOnlySet<string>? GlyphNames,
     IReadOnlySet<int>? Cids) : FontProposal(Font, RuleId);
@@ -78,7 +78,7 @@ public sealed record RegenerateDeclarationProposal(
 /// row (row membership, Task 8) — non-empty (the holder's own logical font is always at least one
 /// member).</para>
 /// </summary>
-public sealed record PatchWidthsProposal(
+internal sealed record PatchWidthsProposal(
     FontId Font, string RuleId,
     byte[] PatchedProgram,
     int GlyphsPatched,
@@ -123,7 +123,7 @@ public sealed record PatchWidthsProposal(
 /// singleton's <c>ClosesFinding</c> can be <c>false</c> on the manual path — it is not true merely
 /// because a proposal was constructed at all.</para>
 /// </summary>
-public sealed record ReplaceTarget(
+internal sealed record ReplaceTarget(
     FontId Font,
     FontId CompositeFont,
     IReadOnlyDictionary<int, ushort> CidToGid,
@@ -143,7 +143,7 @@ public sealed record ReplaceTarget(
 /// ALREADY advance-patched to the declared /W + /DW widths (spec §3 step 8), so applying this
 /// proposal can never create a width finding. All fields are planner-resolved data; the editor
 /// applies mechanically.</summary>
-public sealed record ReplaceProgramProposal(
+internal sealed record ReplaceProgramProposal(
     IReadOnlyList<ReplaceTarget> Targets,
     string RuleId,
     string SourceDescription,
@@ -162,4 +162,4 @@ public sealed record ReplaceProgramProposal(
 }
 
 /// <summary>Everything the planner proposes for one document.</summary>
-public sealed record FontRemediationProposal(IReadOnlyList<FontProposal> Fonts);
+internal sealed record FontRemediationProposal(IReadOnlyList<FontProposal> Fonts);

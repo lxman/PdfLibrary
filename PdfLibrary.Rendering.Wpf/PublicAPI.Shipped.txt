@@ -1,0 +1,25 @@
+#nullable enable
+PdfLibrary.Rendering.Wpf.WpfPageExtensions
+PdfLibrary.Rendering.Wpf.WpfRenderTarget
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.ApplyCtm(System.Numerics.Matrix3x2 ctm) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.BeginPage(int pageNumber, double width, double height, double scale = 1, double cropOffsetX = 0, double cropOffsetY = 0, int rotation = 0) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.Clear() -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.ClearSoftMask() -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.CurrentPageNumber.get -> int
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.DrawImage(PdfLibrary.Document.PdfImage! image, PdfLibrary.Content.PdfGraphicsState! state) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.Drawing.get -> System.Windows.Media.DrawingGroup!
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.EndPage() -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.FillAndStrokePath(PdfLibrary.Rendering.IPathBuilder! path, PdfLibrary.Content.PdfGraphicsState! state, bool evenOdd) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.FillPath(PdfLibrary.Rendering.IPathBuilder! path, PdfLibrary.Content.PdfGraphicsState! state, bool evenOdd) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.FillPathWithTilingPattern(PdfLibrary.Rendering.IPathBuilder! path, PdfLibrary.Content.PdfGraphicsState! state, bool evenOdd, PdfLibrary.Rendering.PdfTilingPattern! pattern, System.Action<PdfLibrary.Rendering.IRenderTarget!>! renderPatternContent) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.GetPageDimensions() -> (int width, int height, double scale)
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.OnGraphicsStateChanged(PdfLibrary.Content.PdfGraphicsState! state) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.RenderSoftMask(string! maskSubtype, System.Action<PdfLibrary.Rendering.IRenderTarget!>! renderMaskContent) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.RestoreState() -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.SaveState() -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.SetClippingPath(PdfLibrary.Rendering.IPathBuilder! path, PdfLibrary.Content.PdfGraphicsState! state, bool evenOdd) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.StrokePath(PdfLibrary.Rendering.IPathBuilder! path, PdfLibrary.Content.PdfGraphicsState! state) -> void
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.Visual.get -> System.Windows.Media.DrawingVisual!
+PdfLibrary.Rendering.Wpf.WpfRenderTarget.WpfRenderTarget(PdfLibrary.Structure.PdfDocument? document = null) -> void
+static PdfLibrary.Rendering.Wpf.WpfPageExtensions.RenderToDrawing(this PdfLibrary.Document.PdfPage! page, double scale = 1) -> System.Windows.Media.DrawingGroup!
+static PdfLibrary.Rendering.Wpf.WpfPageExtensions.ToPageImage(this System.Windows.Media.DrawingGroup! pageDrawing, int pixelWidth, int pixelHeight) -> System.Windows.Media.DrawingImage!

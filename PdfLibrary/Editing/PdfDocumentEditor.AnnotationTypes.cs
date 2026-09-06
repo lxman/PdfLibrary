@@ -15,17 +15,17 @@ namespace PdfLibrary.Editing;
 /// annotation of — before the annotation itself is removed from that page's <c>/Annots</c>. Task 3's
 /// write side (<c>RepairAnnotationTypes</c>) resolves the owning page again at apply time rather than
 /// trusting this value, so <see cref="PageIndex"/> here is for reporting only.</summary>
-public sealed record AnnotationTypeRepairCandidate(int ObjectNumber, string Subtype, int PageIndex);
+internal sealed record AnnotationTypeRepairCandidate(int ObjectNumber, string Subtype, int PageIndex);
 
 /// <summary>One annotation <see cref="PdfDocumentEditor.PreviewAnnotationTypeRepairs"/> found a 6.3.1
 /// defect on but declined to repair, with the reason a caller can surface verbatim.
 /// <see cref="Subtype"/> is null exactly when the annotation has no <c>/Subtype</c> at all — the
 /// rule's own "no appearance-bearing type to reason about" case.</summary>
-public sealed record AnnotationTypeRefusal(int ObjectNumber, string? Subtype, string Reason);
+internal sealed record AnnotationTypeRefusal(int ObjectNumber, string? Subtype, string Reason);
 
 /// <summary>What <see cref="PdfDocumentEditor.PreviewAnnotationTypeRepairs"/> found, read-only: nothing
 /// has been written to the document.</summary>
-public sealed record AnnotationTypeRepairPreview(
+internal sealed record AnnotationTypeRepairPreview(
     IReadOnlyList<AnnotationTypeRepairCandidate> Candidates,
     IReadOnlyList<AnnotationTypeRefusal> Refused);
 
@@ -35,11 +35,11 @@ public sealed record AnnotationTypeRepairPreview(
 /// <see cref="AnnotationTypeRepairCandidate.PageIndex"/> a caller might be holding from an earlier
 /// <see cref="PdfDocumentEditor.PreviewAnnotationTypeRepairs"/> call), and the annotation itself was
 /// removed from that page's <c>/Annots</c>.</summary>
-public sealed record AnnotationTypeRepair(int ObjectNumber, string Subtype, int PageIndex);
+internal sealed record AnnotationTypeRepair(int ObjectNumber, string Subtype, int PageIndex);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairAnnotationTypes"/> actually did and declined to
 /// do, restricted to the staged set it was given.</summary>
-public sealed record AnnotationTypeRepairReport(
+internal sealed record AnnotationTypeRepairReport(
     IReadOnlyList<AnnotationTypeRepair> Applied,
     IReadOnlyList<AnnotationTypeRefusal> Refused);
 
@@ -365,7 +365,7 @@ public sealed partial class PdfDocumentEditor
     /// right now, without writing anything — the read side of this remediation program (Task 3 adds
     /// the write, and a Pellucid domain that calls this). Calling it twice returns the same answer;
     /// there is no idempotency guard to trip because nothing here is ever written.</summary>
-    public AnnotationTypeRepairPreview PreviewAnnotationTypeRepairs()
+    internal AnnotationTypeRepairPreview PreviewAnnotationTypeRepairs()
     {
         var candidates = new List<AnnotationTypeRepairCandidate>();
         var refusals = new List<AnnotationTypeRefusal>();
@@ -507,7 +507,7 @@ public sealed partial class PdfDocumentEditor
     /// reachability walk (<c>ObjectGraphWalker</c>, <see cref="Save(System.IO.Stream, PdfSaveOptions?)"/>'s
     /// default <c>RemoveOrphans</c>) drops it on save — proven in
     /// <c>AnnotationTypeRepairTests</c>, not assumed here.</para></summary>
-    public AnnotationTypeRepairReport RepairAnnotationTypes(IReadOnlySet<int> objectNumbers)
+    internal AnnotationTypeRepairReport RepairAnnotationTypes(IReadOnlySet<int> objectNumbers)
     {
         ArgumentNullException.ThrowIfNull(objectNumbers);
 

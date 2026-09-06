@@ -6,36 +6,36 @@ using PdfLibrary.Document;
 namespace PdfLibrary.Editing;
 
 /// <summary>The two PDF/A clause 6.5.2 hosts whose <c>/AA</c> entry is prohibited.</summary>
-public enum AdditionalActionsOwnerKind { Catalog, Page }
+internal enum AdditionalActionsOwnerKind { Catalog, Page }
 
 /// <summary>One catalog or page <c>/AA</c> entry that can be removed with explicit consent.</summary>
-public sealed record AdditionalActionsRepairCandidate(
+internal sealed record AdditionalActionsRepairCandidate(
     AdditionalActionsOwnerKind OwnerKind,
     int? ObjectNumber,
     int? PageIndex,
     IReadOnlyList<string> TriggerKeys);
 
 /// <summary>One catalog or page <c>/AA</c> entry deliberately left in place.</summary>
-public sealed record AdditionalActionsRepairRefusal(
+internal sealed record AdditionalActionsRepairRefusal(
     AdditionalActionsOwnerKind OwnerKind,
     int? ObjectNumber,
     int? PageIndex,
     string Reason);
 
 /// <summary>Read-only classification of every catalog and page <c>/AA</c> entry.</summary>
-public sealed record AdditionalActionsRepairPreview(
+internal sealed record AdditionalActionsRepairPreview(
     IReadOnlyList<AdditionalActionsRepairCandidate> Candidates,
     IReadOnlyList<AdditionalActionsRepairRefusal> Refused);
 
 /// <summary>One catalog or page <c>/AA</c> host key removed by the repair.</summary>
-public sealed record AdditionalActionsRepair(
+internal sealed record AdditionalActionsRepair(
     AdditionalActionsOwnerKind OwnerKind,
     int? ObjectNumber,
     int? PageIndex,
     IReadOnlyList<string> TriggerKeys);
 
 /// <summary>What a document-scoped additional-actions repair changed and refused.</summary>
-public sealed record AdditionalActionsRepairReport(
+internal sealed record AdditionalActionsRepairReport(
     IReadOnlyList<AdditionalActionsRepair> Repaired,
     IReadOnlyList<AdditionalActionsRepairRefusal> Refused);
 
@@ -55,7 +55,7 @@ public sealed partial class PdfDocumentEditor
     /// same outcome: removal detaches the complete trigger action, including every reachable
     /// <c>/Next</c> action, without mutating an action dictionary that another host may share.
     /// </summary>
-    public AdditionalActionsRepairPreview PreviewAdditionalActionsRepair()
+    internal AdditionalActionsRepairPreview PreviewAdditionalActionsRepair()
     {
         AdditionalActionsClassification classified = ClassifyAdditionalActionsRepair();
         return new AdditionalActionsRepairPreview(
@@ -68,7 +68,7 @@ public sealed partial class PdfDocumentEditor
     /// same rule open. Documents carrying a signed signature or DocMDP permission are refused because
     /// Pellucid performs a full rewrite rather than a signature-preserving append.
     /// </summary>
-    public AdditionalActionsRepairReport RepairAdditionalActions()
+    internal AdditionalActionsRepairReport RepairAdditionalActions()
     {
         AdditionalActionsClassification classified = ClassifyAdditionalActionsRepair();
         var repaired = new List<AdditionalActionsRepair>();

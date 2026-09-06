@@ -8,15 +8,11 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary</PackageId>
         <Title>PdfLibrary</Title>
-        <Version>2.5.2</Version>
+        <Version>2.6.0</Version>
         <Authors>Michael Jordan</Authors>
         <Description>A comprehensive .NET library for parsing, rendering, creating, editing, optimizing, and validating PDF documents. Pure C# implementation with no native or third-party codec dependencies; cross-platform on .NET 8, 9, and 10. Supports PDF 1.x and 2.0, and includes a read-only conformance preflight for PDF/A (2b/2u/3b), PDF/X-4, and PDF/UA-1.</Description>
         <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;pdf-editor;document;csharp;cross-platform;pure-csharp;managed;pdf2.0;pdfa;pdfx;pdf-ua;conformance;preflight;validation;accessibility</PackageTags>
-        <PackageReleaseNotes>2.5.2 fixes colour on the CMYK soft-proof path: a reserved process-name Separation or all-reserved DeviceN (e.g. [/Separation /Cyan ...]) now applies its process colourant DIRECTLY, ignoring the alternate's tint transform, in every painting context — fills, strokes, shadings, images and stencil masks (ISO 32000-2 8.6.6.4; matches Adobe). Previously such spaces flattened through their alternate, so a lying alternate painted the wrong plate. /None components still paint nothing and the RGB path is unchanged. Also: atomic file saves retry transient Windows locks instead of failing, and GetPageColorants logs when a malformed resource graph truncates its inventory. Remaining colour edge cases are each pinned by a baseline test — see Docs/colour/rendering-conformance.md (G-8 ... G-13). See CHANGELOG.md.
-
-2.5.0 adds a public embedded-files read API: PdfDocument.GetEmbeddedFiles() returns read-only EmbeddedFileDescriptor entries for the catalog's /Names /EmbeddedFiles name tree plus catalog-level /AF associated files (ISO 32000-2, 7.11.4 / 14.13) — names, file names, description, MIME subtype, associated-file relationship, and the decoded file bytes. Malformed content never throws; failing entries degrade to metadata-only. First consumer: Factur-X e-invoice extraction (factur-x.xml from PDF/A-3).
-
-2.4.0 adds a read-only conformance preflight (PDF/A-2b/2u/3b, PDF/X-4, PDF/UA-1) via PdfLibrary.Conformance.Preflighter, plus a CMYK / colour-managed rendering fidelity batch (Ghent Workgroup fixtures), 16-bit images, optional-content visibility, mesh shadings, a transparency-group render SPI, and text-extraction fixes. Additive and back-compatible. See CHANGELOG.md.</PackageReleaseNotes>
+        <PackageReleaseNotes>2.6.0 fixes four save-fidelity bugs (xref generation numbers, hex-string form, real-number precision, page-tree cycles), brings preflight to full veraPDF verdict parity on PDF/A-2b and 2u, and adds system font substitution (SystemFontLocator.Resolve/EnumerateFaces, ISystemFontProvider defaults), a document font inventory (FontInventory), CID-to-Unicode extraction with bundled Adobe CMaps, pdf:Trapped and Language metadata, and several editing entry points (SetFileId, SetAnnotationFlags, ConsolidateOutputIntents, ReplaceOutputIntentProfile, HasXfa). Additive and back-compatible: the public API is now a checked-in file. The XMP format layer lives in the bundled PdfLibrary.Xmp assembly with type forwarders (due for removal at 3.0.0). See CHANGELOG.md.</PackageReleaseNotes>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
         <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>
@@ -34,7 +30,13 @@
         <!-- Generate documentation XML for IntelliSense -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <!-- CS1591: XML docs are not required on every public member -->
-        <NoWarn>$(NoWarn);CS1591</NoWarn>
+        <!-- The public surface is a checked-in file (Docs/superpowers/specs/2026-09-06-release-2-6-0-design.md, D9).
+             RS0016: a public symbol is missing from PublicAPI.*.txt. RS0017: the file names a symbol that no
+             longer exists. Both are errors: adding public API is a reviewed text-file diff, never an accident.
+             RS0026/RS0027 (overload-shape rules) are suppressed: they would require changing shipped
+             signatures, and the API files are the contract. -->
+        <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
+        <NoWarn>$(NoWarn);CS1591;RS0026;RS0027</NoWarn>
 
         <!-- This package bundles its internal project-reference DLLs into lib/<tfm> (see the
              CopyProjectReferencesToPackage target) so it ships as ONE self-contained package
@@ -126,26 +128,42 @@
 
     <ItemGroup>
       <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.301" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup>
-        <!-- Every grant below is a TEST or test-tooling assembly, and each is here because a build
-             with it removed fails. Audited 2026-08-24 by removing all five grants in a detached
-             worktree and building each consumer; the ONE that compiled clean without one was
-             deleted (Rendering.SkiaSharp — also the only PRODUCTION grant). Judge the probe by
-             whether the build SUCCEEDS, never by grepping for one error code. Prefer widening the
-             public surface: InternalsVisibleTo to production code means the public API does not say
-             what a real consumer needs. -->
+        <!-- InternalsVisibleTo has two rules in this repo.
+
+             TEST grants: each exists because a build with it removed fails. Audited 2026-08-24 by
+             removing every grant in a detached worktree and building each consumer; the one that
+             compiled without a grant was deleted. Judge a probe by whether the build SUCCEEDS, never
+             by grepping for one error code: an inaccessible STATIC member reads to the compiler as
+             an absent one (CS0117, not CS0122).
+
+             PRODUCTION grants: the PDF/A repair machinery (PdfDocumentEditor.Preview*/Repair*, the
+             Fonts.Remediation planner, the editor's font-program mutations, XmpConformance's two
+             structure repairs) is internal on purpose. Pellucid needs it; the library must not
+             publish it (Docs/superpowers/specs/2026-09-06-release-2-6-0-design.md, D2 and D5). These
+             grants are the bridge until that code moves into the Pellucid repo, at which point they
+             are removed. Widening the public surface is NOT the preferred fix for a CS0122 from a
+             Pellucid assembly; one more grant is. -->
+
+        <!-- Test grants. -->
         <!-- Needs PdfDictionary, PdfInteger, PdfName, PdfStream. -->
         <InternalsVisibleTo Include="PdfLibrary.Rendering.Wpf.Tests" />
         <!-- Both need exactly two types: EmbeddedFontMetrics and PdfFontDescriptor. -->
         <InternalsVisibleTo Include="PdfLibrary.Tests" />
         <InternalsVisibleTo Include="PdfLibrary.Integration" />
-        <!-- Needs the internal static PdfImageToCmyk.StencilInkFromFill (G-14 Task 7 render pins).
-             NOTE for anyone re-running the audit: removing this grant fails with CS0117 ("does not
-             contain a definition"), NOT CS0122 — an inaccessible STATIC member reads to the compiler
-             as an absent one. A probe that greps only for CS0122 will call this grant dead. It is not. -->
+        <!-- Needs the internal static PdfImageToCmyk.StencilInkFromFill (G-14 Task 7 render pins). -->
         <InternalsVisibleTo Include="Pellucid.Rendering.Avalonia.Tests" />
+
+        <!-- Production grants (2.6.0): the repair surface. -->
+        <InternalsVisibleTo Include="Pellucid.Core" />
+        <InternalsVisibleTo Include="Pellucid.App" />
+        <InternalsVisibleTo Include="Pellucid.Remediation" />
+        <InternalsVisibleTo Include="Pellucid.Core.Tests" />
+        <InternalsVisibleTo Include="Pellucid.App.Tests" />
+        <InternalsVisibleTo Include="Pellucid.Remediation.Tests" />
     </ItemGroup>
 
     <ItemGroup>
@@ -202,6 +220,23 @@
                  inside PdfLibrary.xml); bundle it alongside the DLL so consumers keep IntelliSense. -->
             <BuildOutputInPackage Include="$(OutputPath)PdfLibrary.Xmp.xml" />
         </ItemGroup>
+    </Target>
+
+    <!-- The C# compiler writes doc comments for EVERY documented member into the .xml file, internal ones
+         included; 2.5.2 shipped the doc text of 86 internal rule types that way. This filters the XML that
+         pack picks up (obj copy) and the one CopyProjectReferencesToPackage bundles for Xmp (bin copy) down
+         to the public surface. Release-only so Debug builds by project reference (Pellucid) keep IntelliSense
+         for the granted internals. Mechanism: tools/DocFilter, a dependency-free console tool; an inline
+         RoslynCodeTaskFactory task cannot reference System.Reflection.Metadata (prototyped 2026-09-06).
+         The publish workflow asserts the packed result; see Docs/Releasing.md. -->
+    <Target Name="StripNonPublicDocs" BeforeTargets="GenerateNuspec" Condition="'$(Configuration)' == 'Release'">
+        <ItemGroup>
+            <_DocXmlToStrip Include="$(MSBuildProjectDirectory)/bin/$(Configuration)/*/PdfLibrary.xml" />
+            <_DocXmlToStrip Include="$(MSBuildProjectDirectory)/obj/$(Configuration)/*/PdfLibrary.xml" />
+            <_DocXmlToStrip Include="$(MSBuildProjectDirectory)/bin/$(Configuration)/*/PdfLibrary.Xmp.xml" />
+        </ItemGroup>
+        <Error Condition="'@(_DocXmlToStrip)' == ''" Text="StripNonPublicDocs: no Release XML documentation files found under bin/ or obj/. Build Release before packing." />
+        <Exec Command="dotnet run --project &quot;$(MSBuildThisFileDirectory)../tools/DocFilter/DocFilter.csproj&quot; -c Release -- @(_DocXmlToStrip->'&quot;%(RootDir)%(Directory)%(Filename).dll&quot; &quot;%(FullPath)&quot;', ' ')" />
     </Target>
 
 </Project>

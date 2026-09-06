@@ -10,7 +10,7 @@ namespace PdfLibrary.Editing;
 /// The replacement is an ASCII fallback: existing ASCII bytes are preserved and every non-ASCII byte
 /// becomes an auditable <c>~HH</c> token. No legacy character encoding is guessed.
 /// </summary>
-public sealed record NameUtf8RepairCandidate(
+internal sealed record NameUtf8RepairCandidate(
     int ObjectNumber,
     int ArrayIndex,
     string OriginalBytesHex,
@@ -18,15 +18,15 @@ public sealed record NameUtf8RepairCandidate(
     int ConsumerCount);
 
 /// <summary>An invalid name condition the editor deliberately leaves unchanged.</summary>
-public sealed record NameUtf8RepairRefusal(string Reason);
+internal sealed record NameUtf8RepairRefusal(string Reason);
 
 /// <summary>Read-only classification of the current document's invalid UTF-8 names.</summary>
-public sealed record NameUtf8RepairPreview(
+internal sealed record NameUtf8RepairPreview(
     NameUtf8RepairCandidate? Candidate,
     IReadOnlyList<NameUtf8RepairRefusal> Refused);
 
 /// <summary>The exact name value changed by one repair.</summary>
-public sealed record NameUtf8Repair(
+internal sealed record NameUtf8Repair(
     int ObjectNumber,
     int ArrayIndex,
     string OriginalBytesHex,
@@ -34,7 +34,7 @@ public sealed record NameUtf8Repair(
     int ConsumerCount);
 
 /// <summary>What current-document reclassification changed or refused.</summary>
-public sealed record NameUtf8RepairReport(
+internal sealed record NameUtf8RepairReport(
     NameUtf8Repair? Repaired,
     IReadOnlyList<NameUtf8RepairRefusal> Refused);
 
@@ -67,7 +67,7 @@ public sealed partial class PdfDocumentEditor
     /// colour-space array, referenced only by page-resource <c>/ColorSpace</c> dictionaries. Dictionary
     /// keys, resource identifiers, repeated names, signatures, collisions, and every other role refuse.
     /// </summary>
-    public NameUtf8RepairPreview PreviewNameUtf8Repair()
+    internal NameUtf8RepairPreview PreviewNameUtf8Repair()
     {
         NameUtf8Classification classification = ClassifyNameUtf8Repair();
         return new NameUtf8RepairPreview(classification.Candidate, classification.Refused);
@@ -77,7 +77,7 @@ public sealed partial class PdfDocumentEditor
     /// Reclassifies the live object graph and replaces only the proven <c>/Separation</c> colourant-name
     /// value. The alternate colour space, tint transform, resource keys, and every reference are retained.
     /// </summary>
-    public NameUtf8RepairReport RepairNameUtf8()
+    internal NameUtf8RepairReport RepairNameUtf8()
     {
         NameUtf8Classification classification = ClassifyNameUtf8Repair();
         if (classification.Array is null || classification.Candidate is null)

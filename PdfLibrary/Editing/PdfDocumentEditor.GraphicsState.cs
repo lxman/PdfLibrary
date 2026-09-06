@@ -17,7 +17,7 @@ namespace PdfLibrary.Editing;
 /// Type 5 composite may be one of its per-colourant component halftones. A key appears once per
 /// dictionary it would be deleted from, so a Type 5 composite carrying <c>HalftoneName</c> on itself
 /// and on two components contributes three entries.</para></summary>
-public sealed record GraphicsStateRepairCandidate(int ObjectNumber, IReadOnlyList<string> Keys);
+internal sealed record GraphicsStateRepairCandidate(int ObjectNumber, IReadOnlyList<string> Keys);
 
 /// <summary>One 6.2.5 defect reached through the ExtGState numbered <see cref="ObjectNumber"/> that
 /// this editor will NOT repair, with the user-facing sentence saying why. Like
@@ -30,22 +30,22 @@ public sealed record GraphicsStateRepairCandidate(int ObjectNumber, IReadOnlyLis
 /// not a contradiction: 6.2.5 is several independent requirements and <c>ExtGStateRule</c> raises a
 /// separate message for each, so a repair closing one of them while another stays open is the honest
 /// answer rather than a disagreement.</para></summary>
-public sealed record GraphicsStateRefusal(int ObjectNumber, string Reason);
+internal sealed record GraphicsStateRefusal(int ObjectNumber, string Reason);
 
 /// <summary>Read-only classification of every <c>/Type /ExtGState</c> object in the document against
 /// ISO 19005-2/3 6.2.5. Nothing has been written.</summary>
-public sealed record GraphicsStateRepairPreview(
+internal sealed record GraphicsStateRepairPreview(
     IReadOnlyList<GraphicsStateRepairCandidate> Candidates,
     IReadOnlyList<GraphicsStateRefusal> Refused);
 
 /// <summary>One ExtGState <see cref="PdfDocumentEditor.RepairGraphicsState"/> actually edited, with the
 /// keys it deleted. <see cref="DeletedKeys"/> carries the same meaning
 /// <see cref="GraphicsStateRepairCandidate.Keys"/> does, in the past tense.</summary>
-public sealed record GraphicsStateRepair(int ObjectNumber, IReadOnlyList<string> DeletedKeys);
+internal sealed record GraphicsStateRepair(int ObjectNumber, IReadOnlyList<string> DeletedKeys);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairGraphicsState"/> did and declined to do, restricted
 /// to the set it was given.</summary>
-public sealed record GraphicsStateRepairReport(
+internal sealed record GraphicsStateRepairReport(
     IReadOnlyList<GraphicsStateRepair> Applied,
     IReadOnlyList<GraphicsStateRefusal> Refused);
 
@@ -262,7 +262,7 @@ public sealed partial class PdfDocumentEditor
     /// <see cref="RepairGraphicsState"/> takes a nullable set and why a caller for this rule should
     /// normally pass <see langword="null"/> (whole document) rather than the finding's object
     /// number.</para></summary>
-    public GraphicsStateRepairPreview PreviewGraphicsStateRepairs()
+    internal GraphicsStateRepairPreview PreviewGraphicsStateRepairs()
     {
         var candidates = new List<GraphicsStateRepairCandidate>();
         var refusals = new List<GraphicsStateRefusal>();
@@ -307,7 +307,7 @@ public sealed partial class PdfDocumentEditor
     /// halftone is reported and left byte-for-byte alone. An ExtGState carrying both a deletable key
     /// and an unrepairable halftone has the key deleted and the refusal reported -- 6.2.5 is several
     /// independent requirements, and closing one of them is not a claim about the others.</para></summary>
-    public GraphicsStateRepairReport RepairGraphicsState(IReadOnlySet<int>? objectNumbers = null)
+    internal GraphicsStateRepairReport RepairGraphicsState(IReadOnlySet<int>? objectNumbers = null)
     {
         var refusals = new List<GraphicsStateRefusal>();
 

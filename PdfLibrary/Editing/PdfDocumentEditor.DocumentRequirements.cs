@@ -5,28 +5,28 @@ using PdfLibrary.Core.Primitives;
 namespace PdfLibrary.Editing;
 
 /// <summary>The catalog host entry that declares processor requirements for the document.</summary>
-public sealed record DocumentRequirementsRepairCandidate(
+internal sealed record DocumentRequirementsRepairCandidate(
     int? CatalogObjectNumber,
     int? RequirementsObjectNumber);
 
 /// <summary>A catalog <c>/Requirements</c> entry deliberately left in place.</summary>
-public sealed record DocumentRequirementsRepairRefusal(
+internal sealed record DocumentRequirementsRepairRefusal(
     int? CatalogObjectNumber,
     int? RequirementsObjectNumber,
     string Reason);
 
 /// <summary>Read-only classification of the catalog <c>/Requirements</c> entry.</summary>
-public sealed record DocumentRequirementsRepairPreview(
+internal sealed record DocumentRequirementsRepairPreview(
     DocumentRequirementsRepairCandidate? Candidate,
     DocumentRequirementsRepairRefusal? Refused);
 
 /// <summary>The catalog <c>/Requirements</c> host key removed by the repair.</summary>
-public sealed record DocumentRequirementsRepair(
+internal sealed record DocumentRequirementsRepair(
     int? CatalogObjectNumber,
     int? RequirementsObjectNumber);
 
 /// <summary>What the document-requirements repair changed or refused.</summary>
-public sealed record DocumentRequirementsRepairReport(
+internal sealed record DocumentRequirementsRepairReport(
     DocumentRequirementsRepair? Repaired,
     DocumentRequirementsRepairRefusal? Refused);
 
@@ -40,7 +40,7 @@ public sealed partial class PdfDocumentEditor
     /// requirement dictionary, handler dictionary, or named script that another host may share.
     /// Malformed values remain removable because the conformance rule is presence-only.
     /// </summary>
-    public DocumentRequirementsRepairPreview PreviewDocumentRequirementsRepair()
+    internal DocumentRequirementsRepairPreview PreviewDocumentRequirementsRepair()
     {
         PdfDictionary? catalog = _document.CatalogDictionary;
         if (catalog is null || !catalog.ContainsKey(DocumentRequirementsKey))
@@ -73,7 +73,7 @@ public sealed partial class PdfDocumentEditor
     /// processors will no longer be told to require a declared feature or to coordinate alternative
     /// requirement handlers. The referenced objects themselves are never edited.
     /// </summary>
-    public DocumentRequirementsRepairReport RepairDocumentRequirements()
+    internal DocumentRequirementsRepairReport RepairDocumentRequirements()
     {
         DocumentRequirementsRepairPreview preview = PreviewDocumentRequirementsRepair();
         if (preview.Candidate is null)

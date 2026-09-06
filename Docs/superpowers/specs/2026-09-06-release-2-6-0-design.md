@@ -283,14 +283,15 @@ lives there, and Pellucid does not touch Xmp internals.
 
 ### 5.4 XML documentation filter
 
-An MSBuild target in the engine's `Directory.Build.props`, `StripNonPublicXmlDocs`, runs after
-`CoreCompile` for any project with `GenerateDocumentationFile` true and `Configuration` Release.
-Implemented as an inline task (RoslynCodeTaskFactory) that opens the just-built assembly with
-`System.Reflection.Metadata` (no loading), collects public type names and, per public type, public
-member names, then rewrites `$(DocumentationFile)` in place keeping only entries that resolve to
-those. Doc-id parsing: `T:` entries match on type; `M:`/`P:`/`F:`/`E:` entries match on declaring
-type plus the member name before the parameter list. Nested types use `+`-free dotted doc-ids, so
-the parent chain is checked from the metadata, not the string.
+Amended at planning (2026-09-06): the inline `RoslynCodeTaskFactory` task proposed here cannot reference
+`System.Reflection.Metadata` (simple names fail MSB3755; reference-pack or runtime paths collide with the
+factory's own reference set). The filter is instead a dependency-free console tool, `tools/DocFilter`,
+whose pure `DocFilter` class is unit-tested from `PdfLibrary.Tests`, and a target `StripNonPublicDocs` in
+`PdfLibrary.csproj` that runs before `GenerateNuspec` in Release and shells to the tool for every Release
+`PdfLibrary.xml` (bin and obj copies) and `PdfLibrary.Xmp.xml` (bin copy, which is what
+`CopyProjectReferencesToPackage` bundles). Doc-id parsing is unchanged from the description below: `T:`
+entries match on type; `M:`/`P:`/`F:`/`E:` entries match on declaring type plus the member name before the
+parameter list; nested types are resolved through the metadata parent chain and joined with `.`.
 
 Release-only because Pellucid builds Debug locally by project reference and its IntelliSense for
 the granted internals is worth keeping. The publish workflow builds Release, so the packed file is

@@ -7,7 +7,7 @@ namespace PdfLibrary.Editing;
 /// image XObject dictionary, PDF/A clause 6.2.8 (ISO 19005-2/3 6.2.8; calibrated against veraPDF's
 /// PDFA-2 rules — see <c>PdfLibrary.Conformance.Rules.ImageDictionaryRule</c>). The write side (Task 2)
 /// applies these under the same names.</summary>
-public enum ImageDictionaryRepairKind
+internal enum ImageDictionaryRepairKind
 {
     /// <summary>Remove the image dictionary's /Alternates array.</summary>
     RemoveAlternates,
@@ -43,27 +43,27 @@ public enum ImageDictionaryRepairKind
 /// <summary>One image XObject <see cref="PdfDocumentEditor.PreviewImageDictionaryRepairs"/> found
 /// repairable, and every repair kind that would apply to it (an image can carry more than one 6.2.8
 /// defect at once — e.g. both /OPI and a true /Interpolate).</summary>
-public sealed record ImageDictionaryRepairCandidate(
+internal sealed record ImageDictionaryRepairCandidate(
     int ObjectNumber, IReadOnlyList<ImageDictionaryRepairKind> WouldApply);
 
 /// <summary>One image XObject <see cref="PdfDocumentEditor.PreviewImageDictionaryRepairs"/> found a
 /// defect on but declined to repair, with the reason a caller can surface verbatim.</summary>
-public sealed record ImageDictionaryRefusal(
+internal sealed record ImageDictionaryRefusal(
     int ObjectNumber, ImageDictionaryRepairKind Kind, string Reason);
 
 /// <summary>What <see cref="PdfDocumentEditor.PreviewImageDictionaryRepairs"/> found, read-only: nothing
 /// has been written to the document.</summary>
-public sealed record ImageDictionaryRepairPreview(
+internal sealed record ImageDictionaryRepairPreview(
     IReadOnlyList<ImageDictionaryRepairCandidate> Candidates,
     IReadOnlyList<ImageDictionaryRefusal> Refused);
 
 /// <summary>One image XObject <see cref="PdfDocumentEditor.RepairImageDictionaries"/> wrote to, and every
 /// repair kind it actually applied — past tense, unlike <see cref="ImageDictionaryRepairCandidate.WouldApply"/>.</summary>
-public sealed record ImageDictionaryRepair(
+internal sealed record ImageDictionaryRepair(
     int ObjectNumber, IReadOnlyList<ImageDictionaryRepairKind> Applied);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairImageDictionaries"/> did.</summary>
-public sealed record ImageDictionaryRepairReport(
+internal sealed record ImageDictionaryRepairReport(
     IReadOnlyList<ImageDictionaryRepair> Repaired,
     IReadOnlyList<ImageDictionaryRefusal> Refused);
 
@@ -209,7 +209,7 @@ public sealed partial class PdfDocumentEditor
     /// right now, without writing anything — the read side of this remediation program (a later task
     /// adds the write and a Pellucid domain that calls this). Calling it twice returns the same answer;
     /// there is no idempotency guard to trip because nothing here is ever written.</summary>
-    public ImageDictionaryRepairPreview PreviewImageDictionaryRepairs()
+    internal ImageDictionaryRepairPreview PreviewImageDictionaryRepairs()
     {
         var candidates = new List<ImageDictionaryRepairCandidate>();
         var refusals = new List<ImageDictionaryRefusal>();
@@ -236,7 +236,7 @@ public sealed partial class PdfDocumentEditor
     /// image-dictionary fixes per object, so a caller that resolved <c>null</c> to "everything" at save
     /// time would silently re-repair images the user never staged, or explicitly undid. <c>null</c> is
     /// reserved for a whole-document batch run.</para></summary>
-    public ImageDictionaryRepairReport RepairImageDictionaries(IReadOnlySet<int>? objectNumbers = null)
+    internal ImageDictionaryRepairReport RepairImageDictionaries(IReadOnlySet<int>? objectNumbers = null)
     {
         var repaired = new List<ImageDictionaryRepair>();
         var refusals = new List<ImageDictionaryRefusal>();

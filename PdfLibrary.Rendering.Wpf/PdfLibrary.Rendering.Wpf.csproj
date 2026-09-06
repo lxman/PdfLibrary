@@ -24,11 +24,11 @@
     <!-- NuGet Package Metadata -->
     <PackageId>Lxman.PdfLibrary.Rendering.Wpf</PackageId>
     <Title>PdfLibrary.Rendering.Wpf</Title>
-    <Version>2.5.2</Version>
+    <Version>2.6.0</Version>
     <Authors>Michael Jordan</Authors>
     <Description>WPF rendering backend for PdfLibrary. Renders PDF pages to retained WPF DrawingGroup vector visuals for crisp, zoomable display, and provides the geometry to overlay native controls on form fields. Windows-only (WPF). Pairs with the Lxman.PdfLibrary core package on .NET 8, 9, and 10.</Description>
     <PackageTags>pdf;pdf-renderer;wpf;rendering;vector;forms;windows;csharp</PackageTags>
-    <PackageReleaseNotes>2.5.2 tracks the Lxman.PdfLibrary core release (both packages ship in lockstep). See CHANGELOG.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>2.6.0 tracks the Lxman.PdfLibrary core release (both packages ship in lockstep). See CHANGELOG.md.</PackageReleaseNotes>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
     <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>
@@ -49,6 +49,17 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
+  <!-- The public surface is a checked-in file (Docs/superpowers/specs/2026-09-06-release-2-6-0-design.md, D9).
+       RS0016: a public symbol is missing from PublicAPI.*.txt. RS0017: the file names a symbol that no
+       longer exists. Both are errors: adding public API is a reviewed text-file diff, never an accident.
+       RS0026/RS0027 (overload-shape rules) are suppressed: they would require changing shipped
+       signatures, and the API files are the contract. Windows-only: the non-Windows stub compiles no
+       types, so every entry in PublicAPI.Shipped.txt would be "declared but not found" (RS0017) there. -->
+  <PropertyGroup Condition="'$(IsWindowsBuild)' == 'true'">
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
+    <NoWarn>$(NoWarn);RS0026;RS0027</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\icon.png" Pack="true" PackagePath="\" />
@@ -56,6 +67,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.301" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" PrivateAssets="all" Condition="'$(IsWindowsBuild)' == 'true'" />
   </ItemGroup>
 
   <ItemGroup>

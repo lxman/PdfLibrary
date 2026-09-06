@@ -68,6 +68,29 @@ jobs:
     - name: Pack PdfLibrary.Rendering.Wpf
       run: dotnet pack PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj --configuration Release --no-build --output ./nupkg
 
+    - name: Assert packed XML docs describe only the public surface
+      shell: pwsh
+      run: |
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $pkg = Resolve-Path "./nupkg/Lxman.PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg"
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($pkg)
+        try {
+          foreach ($tfm in 'net8.0','net9.0','net10.0') {
+            foreach ($name in "lib/$tfm/PdfLibrary.xml", "lib/$tfm/PdfLibrary.Xmp.xml") {
+              $entry = $zip.GetEntry($name)
+              if (-not $entry) { throw "$name is missing from the package" }
+              $reader = New-Object System.IO.StreamReader($entry.Open())
+              $text = $reader.ReadToEnd(); $reader.Dispose()
+              $bad = [regex]::Matches($text, '<member name="[^"]*(Conformance\.Rules\.|Fonts\.Remediation\.|Repair|Refusal|Proposal|ConformanceContext)[^"]*"')
+              if ($bad.Count -gt 0) {
+                $bad | Select-Object -First 5 | ForEach-Object { Write-Host $_.Value }
+                throw "$name documents $($bad.Count) non-public members; the StripNonPublicDocs target did not run"
+              }
+              Write-Host "$name ok: $(([regex]::Matches($text, '<member name=')).Count) public entries"
+            }
+          }
+        } finally { $zip.Dispose() }
+
     - name: Login to NuGet (Trusted Publishing)
       id: nuget-login
       uses: nuget/login@v1

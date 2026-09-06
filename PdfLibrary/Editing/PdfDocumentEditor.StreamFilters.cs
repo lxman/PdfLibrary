@@ -6,24 +6,24 @@ namespace PdfLibrary.Editing;
 /// <summary>One stream this editor would convert from /LZWDecode to /FlateDecode, with the filter
 /// chain it carries today (for reporting -- the chain is re-derived at write time, never trusted from
 /// here).</summary>
-public sealed record StreamFilterRepairCandidate(int ObjectNumber, IReadOnlyList<string> FilterChain);
+internal sealed record StreamFilterRepairCandidate(int ObjectNumber, IReadOnlyList<string> FilterChain);
 
 /// <summary>One stream carrying a filter PDF/A forbids that this editor will NOT convert, with the
 /// user-facing sentence saying why. Deliberately a plain reason string rather than a repair-kind enum:
 /// this domain has exactly one repair, so a single-member enum would be dead vocabulary that
 /// exhaustiveness tests would then have to carry.</summary>
-public sealed record StreamFilterRefusal(int ObjectNumber, string Reason);
+internal sealed record StreamFilterRefusal(int ObjectNumber, string Reason);
 
 /// <summary>Read-only classification of every stream in the document against ISO 19005-2/3 6.1.7.2.</summary>
-public sealed record StreamFilterRepairPreview(
+internal sealed record StreamFilterRepairPreview(
     IReadOnlyList<StreamFilterRepairCandidate> Candidates,
     IReadOnlyList<StreamFilterRefusal> Refused);
 
 /// <summary>One stream converted from a chain containing /LZWDecode to a single /FlateDecode.</summary>
-public sealed record StreamFilterRepair(int ObjectNumber, IReadOnlyList<string> Before, string After);
+internal sealed record StreamFilterRepair(int ObjectNumber, IReadOnlyList<string> Before, string After);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairStreamFilters"/> actually did and declined to do.</summary>
-public sealed record StreamFilterRepairReport(
+internal sealed record StreamFilterRepairReport(
     IReadOnlyList<StreamFilterRepair> Applied,
     IReadOnlyList<StreamFilterRefusal> Refused);
 
@@ -185,7 +185,7 @@ public sealed partial class PdfDocumentEditor
     /// guard to trip because nothing here is ever written. This is what a Pellucid domain's
     /// <c>Propose</c> calls -- <c>Propose</c> must never call a mutating write counterpart, which a
     /// sibling domain once did and had graded Critical.</summary>
-    public StreamFilterRepairPreview PreviewStreamFilterRepairs()
+    internal StreamFilterRepairPreview PreviewStreamFilterRepairs()
     {
         var candidates = new List<StreamFilterRepairCandidate>();
         var refusals = new List<StreamFilterRefusal>();
@@ -211,7 +211,7 @@ public sealed partial class PdfDocumentEditor
     /// the fully-decoded bytes of the whole filter chain, and those exact bytes are re-encoded under
     /// /FlateDecode -- both LZW and Flate being lossless, the decoded content cannot change. Proven in
     /// <c>StreamFilterRepairTests.Repair_is_lossless_the_decoded_bytes_are_unchanged</c>.</para></summary>
-    public StreamFilterRepairReport RepairStreamFilters(IReadOnlySet<int>? objectNumbers = null)
+    internal StreamFilterRepairReport RepairStreamFilters(IReadOnlySet<int>? objectNumbers = null)
     {
         var repaired = new List<StreamFilterRepair>();
         var refusals = new List<StreamFilterRefusal>();

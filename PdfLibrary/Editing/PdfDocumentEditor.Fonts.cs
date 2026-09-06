@@ -69,7 +69,7 @@ public sealed partial class PdfDocumentEditor
     /// lengths cannot be determined, or no ISO 32000-2 Table 124 pair permits this program in a simple
     /// font dictionary (a CID-keyed program, in particular). The planner declines both shapes before
     /// they reach here; these throws are the backstop.</exception>
-    public void EmbedProgram(FontId font, byte[] program, FontProgramFormat format)
+    internal void EmbedProgram(FontId font, byte[] program, FontProgramFormat format)
     {
         ArgumentNullException.ThrowIfNull(program);
 
@@ -366,7 +366,7 @@ public sealed partial class PdfDocumentEditor
     /// declaration, it never introduces one, because a subset font with no <c>/CIDSet</c> produces no
     /// finding and giving it one would create an obligation the document never had.</para>
     /// </summary>
-    public void SetCidSet(FontId font, IReadOnlySet<int> cids)
+    internal void SetCidSet(FontId font, IReadOnlySet<int> cids)
     {
         ArgumentNullException.ThrowIfNull(cids);
 
@@ -396,7 +396,7 @@ public sealed partial class PdfDocumentEditor
     /// <para>Same contract as <see cref="SetCidSet"/>: corrects an existing declaration, never
     /// introduces one, and writes exactly the names it is given.</para>
     /// </summary>
-    public void SetCharSet(FontId font, IReadOnlySet<string> glyphNames)
+    internal void SetCharSet(FontId font, IReadOnlySet<string> glyphNames)
     {
         ArgumentNullException.ThrowIfNull(glyphNames);
 
@@ -427,7 +427,7 @@ public sealed partial class PdfDocumentEditor
     /// of a mapping.</para>
     /// </summary>
     /// <exception cref="ArgumentException">No object with that number, or it is not a dictionary.</exception>
-    public void SetToUnicode(FontId font, IReadOnlyDictionary<int, string> codeToText)
+    internal void SetToUnicode(FontId font, IReadOnlyDictionary<int, string> codeToText)
     {
         ArgumentNullException.ThrowIfNull(codeToText);
 
@@ -473,7 +473,7 @@ public sealed partial class PdfDocumentEditor
     /// <exception cref="ArgumentException">No dictionary at <paramref name="font"/>.</exception>
     /// <exception cref="InvalidOperationException">The font has no /FontDescriptor or no /FontFile2 —
     /// the planner only proposes patches for fonts that have both; this is the backstop.</exception>
-    public void ReplaceProgramBytes(FontId font, byte[] program)
+    internal void ReplaceProgramBytes(FontId font, byte[] program)
     {
         ArgumentNullException.ThrowIfNull(program);
         if (program.Length == 0)
@@ -524,7 +524,7 @@ public sealed partial class PdfDocumentEditor
     /// <exception cref="InvalidOperationException"><paramref name="proposal"/>'s <c>Font</c> (the
     /// shared program holder, <c>Targets[0].Font</c>) has no /FontDescriptor — the planner only
     /// proposes a replacement for an existing embedded composite font; this is the backstop.</exception>
-    public void ReplaceCompositeProgram(ReplaceProgramProposal proposal)
+    internal void ReplaceCompositeProgram(ReplaceProgramProposal proposal)
     {
         ArgumentNullException.ThrowIfNull(proposal);
         if (proposal.Program.Length == 0)
@@ -654,7 +654,7 @@ public sealed partial class PdfDocumentEditor
     /// the SAME lookup <see cref="SetToUnicode"/> performs, factored into <see cref="ResolveFontDictionary"/>
     /// so the two can never disagree.
     /// </summary>
-    public bool HasFont(FontId font) => TryResolveFontDictionary(font, out _);
+    internal bool HasFont(FontId font) => TryResolveFontDictionary(font, out _);
 
     /// <summary>True iff <see cref="SetCidToGidMapIdentity"/> would write and return true for this
     /// object RIGHT NOW, without writing anything (2026-08-21 font-dictionary remediation, fix round
@@ -663,7 +663,7 @@ public sealed partial class PdfDocumentEditor
     /// is what a query built for that purpose must never do). Delegates to
     /// <see cref="TryGetSettableCidFont"/>, the SAME gate <see cref="SetCidToGidMapIdentity"/> itself
     /// uses, so the two cannot disagree by construction.</summary>
-    public bool CanSetCidToGidMapIdentity(FontId cidFont) => TryGetSettableCidFont(cidFont, out _);
+    internal bool CanSetCidToGidMapIdentity(FontId cidFont) => TryGetSettableCidFont(cidFont, out _);
 
     /// <summary>Writes <c>/CIDToGIDMap /Identity</c> onto a CIDFontType2 dictionary that omits it
     /// (ISO 19005-2 6.2.11.3.2). Semantically a no-op for rendering — <c>CidFont.LoadCidToGidMap</c>
@@ -672,7 +672,7 @@ public sealed partial class PdfDocumentEditor
     /// CIDFontType2 dictionary or already carries any <c>/CIDToGIDMap</c> value — including a
     /// non-<c>Identity</c> name, which this method deliberately does not repair: that variant produced
     /// 0 of 85 corpus findings, so overwriting it would be an invented, unmeasured fix.</summary>
-    public bool SetCidToGidMapIdentity(FontId cidFont)
+    internal bool SetCidToGidMapIdentity(FontId cidFont)
     {
         if (!TryGetSettableCidFont(cidFont, out PdfDictionary dictionary)) return false;
         dictionary.Set("CIDToGIDMap", new PdfName("Identity"));
@@ -703,7 +703,7 @@ public sealed partial class PdfDocumentEditor
     /// 1 — same live-query contract as <see cref="CanSetCidToGidMapIdentity"/>). Delegates to
     /// <see cref="TryGetRemovableSymbolicEncoding"/>, the SAME gate <see cref="RemoveSymbolicEncoding"/>
     /// itself uses, so the two cannot disagree by construction.</summary>
-    public bool CanRemoveSymbolicEncoding(FontId font) => TryGetRemovableSymbolicEncoding(font, out _);
+    internal bool CanRemoveSymbolicEncoding(FontId font) => TryGetRemovableSymbolicEncoding(font, out _);
 
     /// <summary>Removes <c>/Encoding</c> from a symbolic TrueType font (ISO 19005-2 6.2.11.6). Guarded
     /// by <see cref="IsSymbolicTrueType"/>, which mirrors <c>FontDictionaryRule.SymbolicFlags</c>
@@ -712,7 +712,7 @@ public sealed partial class PdfDocumentEditor
     /// (FontDictionaryRule.cs:102-112), which only ever evaluates that predicate for a TrueType font.
     /// Returns false, writing nothing, for a non-symbolic font, a non-TrueType font, or one with no
     /// <c>/Encoding</c> to begin with.</summary>
-    public bool RemoveSymbolicEncoding(FontId font)
+    internal bool RemoveSymbolicEncoding(FontId font)
     {
         if (!TryGetRemovableSymbolicEncoding(font, out PdfDictionary dictionary)) return false;
         dictionary.Remove(new PdfName("Encoding"));

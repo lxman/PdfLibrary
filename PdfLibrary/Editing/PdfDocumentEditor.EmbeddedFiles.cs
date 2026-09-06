@@ -45,11 +45,11 @@ public sealed class PdfEmbeddedFileSpec
 /// not an identifier for the filespec, and in particular not the /EmbeddedFiles name-tree key
 /// <see cref="FileSpecNameRepairReport.Declined"/> reports (that one comes from
 /// <c>IdentifyFileSpec</c>). The two usually coincide, and are free not to.</summary>
-public sealed record FileSpecNameRepair(string Name, bool WroteF, bool WroteUf);
+internal sealed record FileSpecNameRepair(string Name, bool WroteF, bool WroteUf);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairFileSpecNames"/> did. <paramref name="Declined"/>
 /// names each filespec that could not be repaired because it carries no usable source key.</summary>
-public sealed record FileSpecNameRepairReport(
+internal sealed record FileSpecNameRepairReport(
     IReadOnlyList<FileSpecNameRepair> Repaired,
     IReadOnlyList<string> Declined);
 
@@ -61,7 +61,7 @@ public sealed record FileSpecNameRepairReport(
 /// the reasoning). Conditional tense here on purpose. <paramref name="Name"/> carries the same meaning
 /// it does on <see cref="FileSpecNameRepair"/>: the text value that WOULD be copied, not an identifier
 /// for the filespec.</summary>
-public sealed record FileSpecNameRepairCandidate(string Name, bool WouldWriteF, bool WouldWriteUf);
+internal sealed record FileSpecNameRepairCandidate(string Name, bool WouldWriteF, bool WouldWriteUf);
 
 /// <summary>What <see cref="PdfDocumentEditor.PreviewFileSpecNameRepairs"/> found, read-only.
 /// <paramref name="Declined"/> carries the exact same meaning as
@@ -69,7 +69,7 @@ public sealed record FileSpecNameRepairCandidate(string Name, bool WouldWriteF, 
 /// was already a classification ("this filespec has no usable source key"), never an action taken, so
 /// unlike <c>Repaired</c>/<c>WouldRepair</c> it needs no tense change to read correctly in either
 /// context.</summary>
-public sealed record FileSpecNameRepairPreview(
+internal sealed record FileSpecNameRepairPreview(
     IReadOnlyList<FileSpecNameRepairCandidate> WouldRepair,
     IReadOnlyList<string> Declined);
 
@@ -220,7 +220,7 @@ public sealed partial class PdfDocumentEditor
     /// so the write and the preview can never disagree about what would happen to a given document — the
     /// same factoring <c>TryGetSettableCidFont</c> gives <c>CanSetCidToGidMapIdentity</c>/
     /// <c>SetCidToGidMapIdentity</c> (PdfDocumentEditor.Fonts.cs).</para></summary>
-    public FileSpecNameRepairReport RepairFileSpecNames(bool includeAnnotationSpecs)
+    internal FileSpecNameRepairReport RepairFileSpecNames(bool includeAnnotationSpecs)
     {
         var repaired = new List<FileSpecNameRepair>();
         var declined = new List<string>();
@@ -267,7 +267,7 @@ public sealed partial class PdfDocumentEditor
     /// <c>WouldWriteUf</c>. <c>Declined</c> keeps its existing name on both reports: it was already a
     /// classification ("this filespec has no usable source key to copy"), never an action taken, so it
     /// reads correctly whether the caller repaired or only looked.</para></summary>
-    public FileSpecNameRepairPreview PreviewFileSpecNameRepairs(bool includeAnnotationSpecs)
+    internal FileSpecNameRepairPreview PreviewFileSpecNameRepairs(bool includeAnnotationSpecs)
     {
         var candidates = new List<FileSpecNameRepairCandidate>();
         var declined = new List<string>();

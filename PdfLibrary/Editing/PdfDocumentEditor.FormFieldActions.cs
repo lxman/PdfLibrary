@@ -5,35 +5,35 @@ using PdfLibrary.Core.Primitives;
 namespace PdfLibrary.Editing;
 
 /// <summary>The roles through which one dictionary violates PDF/A's form-action restriction.</summary>
-public enum FormFieldActionOwnerKind { Widget, Field, MergedWidgetField }
+internal enum FormFieldActionOwnerKind { Widget, Field, MergedWidgetField }
 
 /// <summary>One indirect host whose prohibited form-action entries can be removed atomically.</summary>
-public sealed record FormFieldActionRepairCandidate(
+internal sealed record FormFieldActionRepairCandidate(
     int ObjectNumber,
     FormFieldActionOwnerKind OwnerKind,
     bool RemovesAction,
     bool RemovesAdditionalActions);
 
 /// <summary>An offending host that this repair deliberately leaves unchanged.</summary>
-public sealed record FormFieldActionRepairRefusal(
+internal sealed record FormFieldActionRepairRefusal(
     int? ObjectNumber,
     FormFieldActionOwnerKind OwnerKind,
     string Reason);
 
 /// <summary>Read-only result of classifying every form-action host in the document.</summary>
-public sealed record FormFieldActionRepairPreview(
+internal sealed record FormFieldActionRepairPreview(
     IReadOnlyList<FormFieldActionRepairCandidate> Candidates,
     IReadOnlyList<FormFieldActionRepairRefusal> Refused);
 
 /// <summary>The host entries actually removed by one repair.</summary>
-public sealed record FormFieldActionRepair(
+internal sealed record FormFieldActionRepair(
     int ObjectNumber,
     FormFieldActionOwnerKind OwnerKind,
     bool RemovedAction,
     bool RemovedAdditionalActions);
 
 /// <summary>What an exact form-action repair selection changed and refused.</summary>
-public sealed record FormFieldActionRepairReport(
+internal sealed record FormFieldActionRepairReport(
     IReadOnlyList<FormFieldActionRepair> Repaired,
     IReadOnlyList<FormFieldActionRepairRefusal> Refused);
 
@@ -65,7 +65,7 @@ public sealed partial class PdfDocumentEditor
     /// the action dictionaries they reference. A merged field/Widget reached by both inventories is one
     /// host and one candidate.
     /// </summary>
-    public FormFieldActionRepairPreview PreviewFormFieldActionRepairs()
+    internal FormFieldActionRepairPreview PreviewFormFieldActionRepairs()
     {
         FormFieldActionClassification classified = ClassifyFormFieldActionRepairs();
         return new FormFieldActionRepairPreview(
@@ -77,7 +77,7 @@ public sealed partial class PdfDocumentEditor
     /// means every candidate; an empty selection means none. Direct hosts and documents protected by a
     /// signed signature or DocMDP are refused. Referenced action objects are never edited or deleted.
     /// </summary>
-    public FormFieldActionRepairReport RepairFormFieldActions(ISet<int>? objectNumbers = null)
+    internal FormFieldActionRepairReport RepairFormFieldActions(ISet<int>? objectNumbers = null)
     {
         FormFieldActionClassification classified = ClassifyFormFieldActionRepairs();
         var repaired = new List<FormFieldActionRepair>();

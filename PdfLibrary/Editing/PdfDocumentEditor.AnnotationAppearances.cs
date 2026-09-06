@@ -11,7 +11,7 @@ namespace PdfLibrary.Editing;
 /// value-less <c>/Tx</c>/<c>/Ch</c> widget. Both are classified by the same
 /// <see cref="PdfDocumentEditor.ClassifyAnnotationAppearance"/> and applied by the same
 /// <see cref="PdfDocumentEditor.RepairAnnotationAppearances"/>.</summary>
-public enum AnnotationAppearanceRepairKind
+internal enum AnnotationAppearanceRepairKind
 {
     /// <summary>R1: delete the <c>/AP</c> keys ISO 19005-2 6.3.3-t2 rejects (<c>/D</c>, <c>/R</c>)
     /// from a widget's appearance dictionary that already validly contains <c>/N</c>. Never a
@@ -29,17 +29,17 @@ public enum AnnotationAppearanceRepairKind
 
 /// <summary>One widget <see cref="PdfDocumentEditor.PreviewAnnotationAppearanceRepairs"/> found
 /// repairable, and every repair kind that would apply to it.</summary>
-public sealed record AnnotationAppearanceRepairCandidate(
+internal sealed record AnnotationAppearanceRepairCandidate(
     int ObjectNumber, IReadOnlyList<AnnotationAppearanceRepairKind> WouldApply);
 
 /// <summary>One widget <see cref="PdfDocumentEditor.PreviewAnnotationAppearanceRepairs"/> found a
 /// 6.3.3 defect on but declined to repair, with the reason a caller can surface verbatim.</summary>
-public sealed record AnnotationAppearanceRefusal(
+internal sealed record AnnotationAppearanceRefusal(
     int ObjectNumber, AnnotationAppearanceRepairKind Kind, string Reason);
 
 /// <summary>What <see cref="PdfDocumentEditor.PreviewAnnotationAppearanceRepairs"/> found, read-only:
 /// nothing has been written to the document.</summary>
-public sealed record AnnotationAppearanceRepairPreview(
+internal sealed record AnnotationAppearanceRepairPreview(
     IReadOnlyList<AnnotationAppearanceRepairCandidate> Candidates,
     IReadOnlyList<AnnotationAppearanceRefusal> Refused);
 
@@ -56,7 +56,7 @@ public sealed record AnnotationAppearanceRepairPreview(
 /// <see cref="AnnotationAppearanceRefusal"/> instead, never a partial entry here (task 1 review
 /// finding, fix round 1: the original classifier let a mixed <c>{/N, /D, /Zzz}</c> case through as
 /// "repaired" while <c>/Zzz</c> survived and the object was still 6.3.3-violating).</para></summary>
-public sealed record AnnotationAppearanceRepair(
+internal sealed record AnnotationAppearanceRepair(
     int ObjectNumber, IReadOnlyList<AnnotationAppearanceRepairKind> Applied);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairAnnotationAppearances"/> did and declined to do --
@@ -67,7 +67,7 @@ public sealed record AnnotationAppearanceRepair(
 /// now fully 6.3.3-conformant -- see the invariant documented on <see cref="AnnotationAppearanceRepair"/>.
 /// An object that is only partially fixable is always reported in <see cref="Refused"/>, never split
 /// across both lists.</para></summary>
-public sealed record AnnotationAppearanceRepairReport(
+internal sealed record AnnotationAppearanceRepairReport(
     IReadOnlyList<AnnotationAppearanceRepair> Repaired,
     IReadOnlyList<AnnotationAppearanceRefusal> Refused);
 
@@ -327,7 +327,7 @@ public sealed partial class PdfDocumentEditor
     /// <summary>Read-only preview of every PDF/A 6.3.3 annotation-appearance defect this editor
     /// would repair right now, without writing anything. Calling it twice returns the same answer;
     /// there is no idempotency guard to trip because nothing here is ever written.</summary>
-    public AnnotationAppearanceRepairPreview PreviewAnnotationAppearanceRepairs()
+    internal AnnotationAppearanceRepairPreview PreviewAnnotationAppearanceRepairs()
     {
         var candidates = new List<AnnotationAppearanceRepairCandidate>();
         var refusals = new List<AnnotationAppearanceRefusal>();
@@ -369,7 +369,7 @@ public sealed partial class PdfDocumentEditor
     /// call returns -- never partially fixed. See <see cref="AnnotationAppearanceRepair"/>'s own doc
     /// comment for why that always holds (it is enforced in <see cref="ClassifyAnnotationAppearance"/>,
     /// not here -- this method only ever executes a repair that classifier already vetted).</para></summary>
-    public AnnotationAppearanceRepairReport RepairAnnotationAppearances(IReadOnlySet<int>? objectNumbers = null)
+    internal AnnotationAppearanceRepairReport RepairAnnotationAppearances(IReadOnlySet<int>? objectNumbers = null)
     {
         var repaired = new List<AnnotationAppearanceRepair>();
         var refusals = new List<AnnotationAppearanceRefusal>();

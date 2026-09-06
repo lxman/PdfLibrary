@@ -22,7 +22,7 @@ namespace PdfLibrary.Fonts.Remediation;
 /// or a <see cref="ReplaceProgramProposal"/> from
 /// <see cref="FontRemediationPlanner.AssessReplacementCandidate"/> (whole-program replacement mode).
 /// </param>
-public sealed record CandidateAssessment(
+internal sealed record CandidateAssessment(
     FontProgramFormat? Format,
     string? HardBlockReason,
     IReadOnlyList<string> Warnings,
