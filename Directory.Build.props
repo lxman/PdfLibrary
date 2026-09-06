@@ -34,6 +34,25 @@
        there for the same reason after two investigations stalled at the same point. This repo had no
        Directory.Build.props at all, so this file also becomes the place for any future repo-wide
        MSBuild settings. -->
+  <!-- Keep `dotnet test` on the VSTest path under the .NET 10 SDK.
+
+       xunit.v3 4.0.0 sets IsTestingPlatformApplication=true by default, and Microsoft.Testing.Platform
+       2.x then refuses the VSTest target on SDK 10+ ("Testing with VSTest target is no longer
+       supported ... opt-in to the new dotnet test experience"). Every `dotnet test` in this repo
+       (ci.yml, the publish workflow, tools/gate.sh, the remote gates) is a VSTest invocation with
+       VSTest filter syntax, and the trx convention below is a VSTest logger. Forcing the property off
+       keeps that exact behaviour: xunit.runner.visualstudio still discovers and runs the tests, as it
+       did under xunit.v3 3.x. Verified 2026-09-06 (FontParser.Tests, ImageLibrary.IntegrationTests,
+       PdfLibrary.Tests, the parity filter). Moving to the MTP-based `dotnet test` (global.json
+       "test": { "runner": "Microsoft.Testing.Platform" }) is a deliberate migration of every filter
+       and logger argument in both repos, to be done on purpose, not as a side effect of a package bump.
+
+       Unconditional on purpose: a project without the MTP packages ignores it, and a name-based
+       condition would miss ImageLibrary.IntegrationTests and ICCSharp.Diff. -->
+  <PropertyGroup>
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+  </PropertyGroup>
+
   <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
     <VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults</VSTestResultsDirectory>
     <VSTestLogger Condition="'$(VSTestLogger)' == ''">trx%3BLogFileName=$(MSBuildProjectName)-$([System.DateTime]::Now.ToString(`yyyyMMdd-HHmmss-fff`)).trx</VSTestLogger>

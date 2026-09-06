@@ -1,0 +1,51 @@
+<Project>
+
+  <!-- Central Package Management: every PackageReference in this repo takes its version from here.
+       Bump a package by editing ONE line; a csproj must not carry a Version attribute (NU1008 if it
+       does) and must not reference a package absent from this list (NU1010). A project that genuinely
+       needs a different version says so in place with VersionOverride="x.y.z" on its PackageReference.
+
+       Transitive pinning is deliberately OFF (the default): turning it on rewrites the dependency
+       graph of the shipped packages, and this file exists to move versions, not change them.
+
+       Serilog.Sinks.File: the WPF viewer carried a nightly (8.0.0-nblumhardt-02322) from a May 2026
+       bulk upgrade; there is still no stable 8.x, so it is consolidated onto the 7.0.0 the shipped
+       library uses. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!-- Shipped library dependencies (Lxman.PdfLibrary and its bundled assemblies) -->
+  <ItemGroup>
+    <PackageVersion Include="Melville.CSJ2K" Version="0.6.4" />
+    <PackageVersion Include="Microsoft.CSharp" Version="4.7.0" />
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Include="System.Text.Json" Version="10.0.11" />
+    <PackageVersion Include="Wacton.Unicolour" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Rendering -->
+  <ItemGroup>
+    <PackageVersion Include="SkiaSharp" Version="4.151.2" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.2" />
+  </ItemGroup>
+
+  <!-- Build-time tooling: analyzers, SourceLink -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.400" />
+  </ItemGroup>
+
+  <!-- Test and benchmark stack -->
+  <ItemGroup>
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageVersion Include="Codeuctivity.ImageSharpCompare" Version="4.1.390" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+</Project>

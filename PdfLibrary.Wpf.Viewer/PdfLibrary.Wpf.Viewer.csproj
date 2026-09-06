@@ -29,8 +29,8 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="Serilog" Version="4.4.0" />
-      <PackageReference Include="Serilog.Sinks.File" Version="8.0.0-nblumhardt-02322" />
+      <PackageReference Include="Serilog" />
+      <PackageReference Include="Serilog.Sinks.File" />
     </ItemGroup>
 
 </Project>
