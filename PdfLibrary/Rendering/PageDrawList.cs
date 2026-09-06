@@ -44,7 +44,25 @@ public sealed record SpotImageInk(
 public sealed record ImageCommand(
     byte[] Rgba, int Width, int Height, AlphaMode Alpha, Matrix3x2 Ctm, PdfGraphicsState State,
     byte[]? Cmyk = null, (bool C, bool M, bool Y, bool K)? OverprintPlates = null,
-    SpotImageInk? Spots = null, byte[]? ProofCmyk = null) : DrawCommand;
+    SpotImageInk? Spots = null, byte[]? ProofCmyk = null) : DrawCommand
+{
+    // 2.5.2 binary-compatibility shapes. The primary constructor gained ProofCmyk after 2.5.2; a consumer
+    // compiled against 2.5.2 binds to the nine-parameter constructor and the nine-target Deconstruct below.
+    // A nine-argument call from source binds here too (no default substitution needed), which is the same
+    // behaviour as before: ProofCmyk is null. Keep both until 3.0.0.
+    public ImageCommand(byte[] Rgba, int Width, int Height, AlphaMode Alpha, Matrix3x2 Ctm,
+        PdfGraphicsState State, byte[]? Cmyk, (bool C, bool M, bool Y, bool K)? OverprintPlates,
+        SpotImageInk? Spots)
+        : this(Rgba, Width, Height, Alpha, Ctm, State, Cmyk, OverprintPlates, Spots, ProofCmyk: null) { }
+
+    public void Deconstruct(out byte[] Rgba, out int Width, out int Height, out AlphaMode Alpha,
+        out Matrix3x2 Ctm, out PdfGraphicsState State, out byte[]? Cmyk,
+        out (bool C, bool M, bool Y, bool K)? OverprintPlates, out SpotImageInk? Spots)
+    {
+        Rgba = this.Rgba; Width = this.Width; Height = this.Height; Alpha = this.Alpha; Ctm = this.Ctm;
+        State = this.State; Cmyk = this.Cmyk; OverprintPlates = this.OverprintPlates; Spots = this.Spots;
+    }
+}
 public sealed record SoftMaskPushCommand(string Subtype, PageDrawList Mask) : DrawCommand;
 public sealed record SoftMaskPopCommand : DrawCommand;
 
