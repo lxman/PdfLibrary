@@ -327,6 +327,13 @@ public class PdfPage
     }
 
     /// <summary>
+    /// Extracts page text and assesses whether a predominantly Latin text layer looks plausible.
+    /// Use this when deciding whether a page with non-empty extracted text should still be routed
+    /// to OCR because its font lacks a usable Unicode mapping.
+    /// </summary>
+    public TextExtractionResult ExtractTextWithQuality() => new(ExtractText());
+
+    /// <summary>
     /// Extracts text with position and formatting information
     /// </summary>
     public (string Text, List<TextFragment> Fragments) ExtractTextWithFragments()

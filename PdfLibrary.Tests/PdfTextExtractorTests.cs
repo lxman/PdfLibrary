@@ -505,6 +505,52 @@ ET";
     }
 
     [Fact]
+    public void TJWordGap_InsertsSpace_AndKeepsFragmentOffsetsExact()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+[(Hello) -250 (World)] TJ
+ET";
+
+        (string text, List<TextFragment> fragments) =
+            PdfTextExtractor.ExtractTextWithFragments(Encoding.ASCII.GetBytes(content));
+
+        Assert.Equal("\nHello World", text);
+        Assert.Equal(2, fragments.Count);
+        Assert.Equal(7, fragments[1].TextOffset);
+        foreach (TextFragment fragment in fragments)
+            Assert.Equal(fragment.Text, text.Substring(fragment.TextOffset, fragment.Text.Length));
+    }
+
+    [Fact]
+    public void TJKerningGap_BelowThreshold_DoesNotSplitWord()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+[(T) -100 (e) -50 (s) -50 (t)] TJ
+ET";
+
+        Assert.Equal("\nTest", PdfTextExtractor.ExtractText(Encoding.ASCII.GetBytes(content)));
+    }
+
+    [Fact]
+    public void TJWordGap_DoesNotDuplicateExplicitWhitespace()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+[(Hello) -250 ( World)] TJ
+ET";
+
+        Assert.Equal("\nHello World", PdfTextExtractor.ExtractText(Encoding.ASCII.GetBytes(content)));
+    }
+
+    [Fact]
     public void ConsecutiveTj_WithoutRepositioning_AdvancesToo()
     {
         var content = @"

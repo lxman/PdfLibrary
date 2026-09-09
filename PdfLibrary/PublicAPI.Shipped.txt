@@ -1098,6 +1098,13 @@ PdfLibrary.Content.PdfSoftMask.PdfSoftMask() -> void
 PdfLibrary.Content.PdfSoftMask.PdfSoftMask(PdfLibrary.Content.PdfSoftMask! original) -> void
 PdfLibrary.Content.PdfSoftMask.Subtype.get -> string!
 PdfLibrary.Content.PdfSoftMask.Subtype.init -> void
+PdfLibrary.Content.TextExtractionResult
+PdfLibrary.Content.TextExtractionResult.IsLikelyReadable.get -> bool
+PdfLibrary.Content.TextExtractionResult.NonWhitespaceCharacterCount.get -> int
+PdfLibrary.Content.TextExtractionResult.PrintableAsciiRatio.get -> double
+PdfLibrary.Content.TextExtractionResult.ReplacementCharacterCount.get -> int
+PdfLibrary.Content.TextExtractionResult.Text.get -> string!
+PdfLibrary.Content.TextExtractionResult.UnexpectedControlCharacterCount.get -> int
 PdfLibrary.Content.TextFragment
 PdfLibrary.Content.TextFragment.FontName.get -> string?
 PdfLibrary.Content.TextFragment.FontName.init -> void
@@ -1209,6 +1216,7 @@ PdfLibrary.Document.PdfPage
 PdfLibrary.Document.PdfPage.Document.get -> PdfLibrary.Structure.PdfDocument?
 PdfLibrary.Document.PdfPage.ExtractText() -> string!
 PdfLibrary.Document.PdfPage.ExtractTextWithFragments() -> (string! Text, System.Collections.Generic.List<PdfLibrary.Content.TextFragment!>! Fragments)
+PdfLibrary.Document.PdfPage.ExtractTextWithQuality() -> PdfLibrary.Content.TextExtractionResult!
 PdfLibrary.Document.PdfPage.GetCropBox() -> PdfLibrary.Document.PdfRectangle
 PdfLibrary.Document.PdfPage.GetGeometry(double scale = 1) -> PdfLibrary.Document.PageGeometry
 PdfLibrary.Document.PdfPage.GetImageCount() -> int

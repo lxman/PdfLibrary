@@ -13,6 +13,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   resolve the trailer's `/Root` to `/Pages` or `/Page` instead of `/Catalog`. The reader now corrects
   the subsection only when both the object-0 free-head signature and the contradictory trailer
   `/Size` confirm the defect.
+- **Text extraction now infers spaces from large `TJ` positioning gaps.** PDFs that position each
+  word separately without storing literal space characters no longer produce concatenated clauses;
+  adjustments above 0.2 em insert a separator while ordinary kerning remains within a word.
+
+### Added
+- **`PdfPage.ExtractTextWithQuality()` detects implausible Latin text layers.** Its
+  `TextExtractionResult` returns the extracted text, printable-ASCII ratio, unexpected-control and
+  replacement-character counts, plus `IsLikelyReadable`. This lets callers route pages whose fonts
+  lack a usable `/ToUnicode` mapping to OCR instead of trusting non-empty but garbled text.
 
 ## [2.6.0] - 2026-09-06
 

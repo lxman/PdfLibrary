@@ -35,6 +35,12 @@ internal class PdfTextExtractor : PdfContentProcessor
     private Vector2 _cursor;
     private bool _cursorValid;
     private const double SpaceThreshold = 0.2; // Threshold for detecting word spacing (as fraction of font size)
+    // Net horizontal displacement since the last non-empty string inside a TJ array. PDF producers
+    // commonly omit literal U+0020 characters and express word breaks as a sufficiently large negative
+    // TJ number instead. Keep the displacement pending until text actually follows so a trailing TJ
+    // adjustment does not manufacture trailing whitespace.
+    private double _pendingPositioningAdjustment;
+    private double _pendingPositioningThreshold;
 
     // Marked-content frames (innermost last). Each records the /MCID of a tagged BDC (null otherwise) and
     // whether the sequence is an /Artifact, so shown text can be tagged with its structure MCID.
@@ -89,6 +95,8 @@ internal class PdfTextExtractor : PdfContentProcessor
     protected override void OnBeginText()
     {
         _inTextObject = true;
+        _pendingPositioningAdjustment = 0;
+        _pendingPositioningThreshold = 0;
         // Don't reset _lastPosition here - we want to track position across text blocks
         // Only initialize it if this is the very first text block (when _lastPosition is default)
         if (_lastPosition == default)
@@ -100,6 +108,8 @@ internal class PdfTextExtractor : PdfContentProcessor
     protected override void OnEndText()
     {
         _inTextObject = false;
+        _pendingPositioningAdjustment = 0;
+        _pendingPositioningThreshold = 0;
     }
 
     protected override void OnTextPositionChanged()
@@ -107,6 +117,8 @@ internal class PdfTextExtractor : PdfContentProcessor
         if (!_inTextObject) return;
 
         _cursorValid = false;   // matrix moved: next show-text restarts the cursor from the matrix
+        _pendingPositioningAdjustment = 0;
+        _pendingPositioningThreshold = 0;
 
         Vector2 currentPosition = CurrentState.GetTextPosition();
         float distance = Vector2.Distance(_lastPosition, currentPosition);
@@ -198,6 +210,22 @@ internal class PdfTextExtractor : PdfContentProcessor
         // Decode text using font
         string decodedText = DecodeText(text, font);
 
+        // A negative number in a TJ array moves the next glyph to the right. When the net move is
+        // more than 0.2 em, it is a word gap rather than ordinary kerning. The separator is assembled
+        // text only (like Td/Tm separators), so fragment geometry and widths remain faithful to the PDF.
+        if (decodedText.Length > 0)
+        {
+            if (_pendingPositioningAdjustment > _pendingPositioningThreshold
+                && _textBuilder.Length > 0
+                && !char.IsWhiteSpace(_textBuilder[^1])
+                && !char.IsWhiteSpace(decodedText[0]))
+            {
+                _textBuilder.Append(' ');
+            }
+            _pendingPositioningAdjustment = 0;
+            _pendingPositioningThreshold = 0;
+        }
+
         // Calculate effective font size by extracting scale from TextMatrix
         // The TextMatrix contains scaling factors that affect the actual rendered size
         // Extract Y-scale from the second column vector: sqrt(M12^2 + M22^2)
@@ -254,7 +282,10 @@ internal class PdfTextExtractor : PdfContentProcessor
                     double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize
                         * (CurrentState.HorizontalScaling / 100.0) * TextMatrixScaleX();
                     if (_cursorValid)
+                    {
                         _cursor = _cursor with { X = _cursor.X + (float)adjustment };
+                        TrackPositioningAdjustment(adjustment);
+                    }
                     _lastPosition = _cursorValid ? _cursor : CurrentState.GetTextPosition();
                     break;
                 }
@@ -263,12 +294,24 @@ internal class PdfTextExtractor : PdfContentProcessor
                     double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize
                         * (CurrentState.HorizontalScaling / 100.0) * TextMatrixScaleX();
                     if (_cursorValid)
+                    {
                         _cursor = _cursor with { X = _cursor.X + (float)adjustment };
+                        TrackPositioningAdjustment(adjustment);
+                    }
                     _lastPosition = _cursorValid ? _cursor : CurrentState.GetTextPosition();
                     break;
                 }
             }
         }
+    }
+
+    private void TrackPositioningAdjustment(double adjustment)
+    {
+        _pendingPositioningAdjustment += adjustment;
+        // Compare horizontal motion in user space with the horizontally scaled em size. Taking the
+        // absolute value keeps mirrored text matrices from turning the threshold negative.
+        _pendingPositioningThreshold = SpaceThreshold * Math.Abs(CurrentState.FontSize
+            * (CurrentState.HorizontalScaling / 100.0) * TextMatrixScaleX());
     }
 
     /// <summary>
