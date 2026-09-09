@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.6.1] - 2026-09-09
+
+### Fixed
+- **Malformed classic cross-reference subsections are repaired during load.** Some PDF producers
+  declare a subsection as `1 N` while emitting entries for objects `0..N-1`, beginning with the
+  object-0 free-list head. PdfLibrary previously shifted every offset by one object number and could
+  resolve the trailer's `/Root` to `/Pages` or `/Page` instead of `/Catalog`. The reader now corrects
+  the subsection only when both the object-0 free-head signature and the contradictory trailer
+  `/Size` confirm the defect.
+
 ## [2.6.0] - 2026-09-06
 
 ### Fixed

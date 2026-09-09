@@ -8,11 +8,11 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary</PackageId>
         <Title>PdfLibrary</Title>
-        <Version>2.6.0</Version>
+        <Version>2.6.1</Version>
         <Authors>Michael Jordan</Authors>
         <Description>A comprehensive .NET library for parsing, rendering, creating, editing, optimizing, and validating PDF documents. Pure C# implementation with no native or third-party codec dependencies; cross-platform on .NET 8, 9, and 10. Supports PDF 1.x and 2.0, and includes a read-only conformance preflight for PDF/A (2b/2u/3b), PDF/X-4, and PDF/UA-1.</Description>
         <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;pdf-editor;document;csharp;cross-platform;pure-csharp;managed;pdf2.0;pdfa;pdfx;pdf-ua;conformance;preflight;validation;accessibility</PackageTags>
-        <PackageReleaseNotes>2.6.0 fixes four save-fidelity bugs (xref generation numbers, hex-string form, real-number precision, page-tree cycles), brings preflight to full veraPDF verdict parity on PDF/A-2b and 2u, and adds system font substitution (SystemFontLocator.Resolve/EnumerateFaces, ISystemFontProvider defaults), a document font inventory (FontInventory), CID-to-Unicode extraction with bundled Adobe CMaps, pdf:Trapped and Language metadata, and several editing entry points (SetFileId, SetAnnotationFlags, ConsolidateOutputIntents, ReplaceOutputIntentProfile, HasXfa). Additive and back-compatible: the public API is now a checked-in file. The XMP format layer lives in the bundled PdfLibrary.Xmp assembly with type forwarders (due for removal at 3.0.0). See CHANGELOG.md.</PackageReleaseNotes>
+        <PackageReleaseNotes>2.6.1 repairs malformed classic cross-reference tables where a producer labels an object-0-based subsection as starting at object 1. PdfLibrary validates the object-0 free-list head and trailer /Size before correcting the numbering. See CHANGELOG.md.</PackageReleaseNotes>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
         <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>
