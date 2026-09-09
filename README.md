@@ -35,12 +35,18 @@ The core package has no rendering dependency at all — it's safe for servers, c
 ### Load a PDF and extract text
 
 ```csharp
+using PdfLibrary.Content;
 using PdfLibrary.Structure;
 
 using var doc = PdfDocument.Load("document.pdf");
 var page = doc.GetPage(0)!;   // 0-based index
 
 string text = page.ExtractText();
+
+// For predominantly Latin documents, inspect text-layer quality before deciding whether to OCR.
+TextExtractionResult quality = page.ExtractTextWithQuality();
+if (!quality.IsLikelyReadable || quality.ReplacementCharacterCount > 0)
+    Console.WriteLine("This page may need OCR.");
 
 // Or get every fragment with its position and font
 var (fullText, fragments) = page.ExtractTextWithFragments();

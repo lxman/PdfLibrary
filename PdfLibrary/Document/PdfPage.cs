@@ -314,16 +314,17 @@ public class PdfPage
         if (contents.Count == 0)
             return string.Empty;
 
-        var allText = new StringBuilder();
         PdfResources? resources = GetResources();
+        var extractor = new PdfTextExtractor(resources, _document);
 
         foreach (byte[] contentData in contents.Select(stream => stream.GetDecodedData(_document?.Decryptor)))
         {
-            string text = PdfTextExtractor.ExtractText(contentData, resources, _document);
-            allText.Append(text);
+            // A /Contents array is one logical content stream. Graphics and text state established
+            // in one member remains active in the next, so all members must share one processor.
+            extractor.ProcessOperators(PdfContentParser.Parse(contentData));
         }
 
-        return allText.ToString();
+        return extractor.GetText();
     }
 
     /// <summary>
@@ -342,18 +343,15 @@ public class PdfPage
         if (contents.Count == 0)
             return (string.Empty, []);
 
-        var allText = new StringBuilder();
-        var allFragments = new List<TextFragment>();
         PdfResources? resources = GetResources();
+        var extractor = new PdfTextExtractor(resources, _document);
 
         foreach (byte[] decodedData in contents.Select(stream => stream.GetDecodedData(_document?.Decryptor)))
         {
-            (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(decodedData, resources, _document);
-            allText.Append(text);
-            allFragments.AddRange(fragments);
+            extractor.ProcessOperators(PdfContentParser.Parse(decodedData));
         }
 
-        return (allText.ToString(), allFragments);
+        return (extractor.GetText(), extractor.GetTextFragments());
     }
 
     /// <summary>

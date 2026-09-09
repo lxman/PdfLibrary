@@ -1,6 +1,7 @@
 ﻿using System.Numerics;
 using System.Text;
 using Logging;
+using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -18,6 +19,8 @@ internal class PdfTextExtractor : PdfContentProcessor
     private readonly List<TextFragment> _fragments = [];
     private readonly PdfResources? _resources;
     private readonly PdfDocument? _document;
+    private readonly Stack<PdfFont?> _fontStack = new();
+    private PdfFont? _currentFont;
     // Form XObjects currently on the extraction stack (by reference identity), shared across the nested
     // per-form extractors. A Form XObject that transitively invokes itself (a cyclic /Do, malformed but
     // real — GWG161) would otherwise recurse until the stack overflows; the guard skips a form already
@@ -50,11 +53,26 @@ internal class PdfTextExtractor : PdfContentProcessor
     /// Creates a text extractor with optional resources for font resolution
     /// </summary>
     internal PdfTextExtractor(PdfResources? resources = null, PdfDocument? document = null,
-        HashSet<PdfStream>? activeForms = null)
+        HashSet<PdfStream>? activeForms = null, PdfGraphicsState? initialState = null,
+        PdfFont? initialFont = null)
     {
         _resources = resources;
         _document = document;
         _activeForms = activeForms ?? new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
+        if (initialState is not null)
+            CurrentState = initialState;
+        _currentFont = initialFont;
+    }
+
+    private protected override void ProcessOperator(PdfOperator op)
+    {
+        if (op is SaveGraphicsStateOperator)
+            _fontStack.Push(_currentFont);
+
+        base.ProcessOperator(op);
+
+        if (op is RestoreGraphicsStateOperator && _fontStack.Count > 0)
+            _currentFont = _fontStack.Pop();
     }
 
     /// <summary>
@@ -110,6 +128,13 @@ internal class PdfTextExtractor : PdfContentProcessor
         _inTextObject = false;
         _pendingPositioningAdjustment = 0;
         _pendingPositioningThreshold = 0;
+    }
+
+    protected override void OnFontChanged()
+    {
+        _currentFont = _resources is not null && !string.IsNullOrEmpty(CurrentState.FontName)
+            ? _resources.GetFontObject(CurrentState.FontName)
+            : null;
     }
 
     protected override void OnTextPositionChanged()
@@ -200,15 +225,8 @@ internal class PdfTextExtractor : PdfContentProcessor
             _cursorValid = true;
         }
 
-        // Get current font object
-        PdfFont? font = null;
-        if (_resources is not null && !string.IsNullOrEmpty(CurrentState.FontName))
-        {
-            font = _resources.GetFontObject(CurrentState.FontName);
-        }
-
         // Decode text using font
-        string decodedText = DecodeText(text, font);
+        string decodedText = DecodeText(text, _currentFont);
 
         // A negative number in a TJ array moves the next glyph to the right. When the net move is
         // more than 0.2 em, it is a word gap rather than ordinary kerning. The separator is assembled
@@ -242,7 +260,7 @@ internal class PdfTextExtractor : PdfContentProcessor
         // "/F1 1 Tf" with the real size in Tm (e.g. "28 0 0 28 x y Tm") otherwise get advances
         // 28× too small: every fragment of a line stacks near the line start, and highlight
         // boxes / hit-testing built from X/Width compress into the first glyph (2026-07-04).
-        double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize,
+        double advance = CalculateTextWidth(text.Bytes, _currentFont, CurrentState.FontSize,
             CurrentState.CharacterSpacing, CurrentState.WordSpacing, CurrentState.HorizontalScaling) * TextMatrixScaleX();
 
         int textOffset = _textBuilder.Length;
@@ -395,15 +413,20 @@ internal class PdfTextExtractor : PdfContentProcessor
         PdfResources? formResources = _resources;
         if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
         {
-            if (resourcesObj is PdfDictionary resourcesDict)
+            if (Resolve(resourcesObj) is PdfDictionary resourcesDict)
             {
                 formResources = new PdfResources(resourcesDict, _document);
             }
         }
 
-        // Create a new extractor for the form content, sharing the active-form set so the cycle guard
-        // spans the whole nested-form chain.
-        var formExtractor = new PdfTextExtractor(formResources ?? _resources, _document, _activeForms);
+        // A Form XObject inherits the caller's graphics state, including the selected font. Preserve
+        // the resolved font object as well as its resource name: the form can have a different resource
+        // dictionary (and even reuse that name for another font), so resolving the inherited name in
+        // the form's scope is incorrect. A Tf inside the form replaces both values normally.
+        PdfGraphicsState formState = CurrentState.Clone();
+        formState.Ctm = Matrix3x2.Identity; // fragment placement below applies the caller CTM exactly once
+        var formExtractor = new PdfTextExtractor(formResources ?? _resources, _document, _activeForms,
+            formState, _currentFont);
 
         // Parse and process the Form XObject's content stream
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
@@ -453,11 +476,11 @@ internal class PdfTextExtractor : PdfContentProcessor
         // Check for UTF-16BE BOM (used in some PDFs)
         if (bytes is [0xFE, 0xFF, ..])
         {
-            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+            return ReplaceNullCharacters(Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2));
         }
 
         // Use font for decoding if available
-        if (font is null) return Encoding.Latin1.GetString(bytes);
+        if (font is null) return ReplaceNullCharacters(Encoding.Latin1.GetString(bytes));
         var sb = new StringBuilder();
 
         // Type0 fonts use multibyte character codes (typically 2 bytes)
@@ -468,14 +491,14 @@ internal class PdfTextExtractor : PdfContentProcessor
             {
                 int charCode = (bytes[i] << 8) | bytes[i + 1];
                 string decoded = font.DecodeCharacter(charCode);
-                sb.Append(decoded);
+                sb.Append(ReplaceNullCharacters(decoded));
             }
 
             // Handle odd byte at the end (shouldn't happen in well-formed PDFs)
             if (bytes.Length % 2 != 1) return sb.ToString();
             {
                 string decoded = font.DecodeCharacter(bytes[^1]);
-                sb.Append(decoded);
+                sb.Append(ReplaceNullCharacters(decoded));
             }
         }
         else
@@ -484,7 +507,7 @@ internal class PdfTextExtractor : PdfContentProcessor
             foreach (byte b in bytes)
             {
                 string decoded = font.DecodeCharacter(b);
-                sb.Append(decoded);
+                sb.Append(ReplaceNullCharacters(decoded));
             }
         }
 
@@ -492,6 +515,9 @@ internal class PdfTextExtractor : PdfContentProcessor
 
         // Fall back to Latin-1/PDFDocEncoding (similar to Windows-1252)
     }
+
+    private static string ReplaceNullCharacters(string text) =>
+        text.IndexOf('\0') < 0 ? text : text.Replace('\0', '\uFFFD');
 
     /// <summary>Horizontal scale of the current text matrix — length of its first column vector
     /// (sqrt(M11² + M21²)), the X-axis analogue of the scaleY used for effectiveFontSize.

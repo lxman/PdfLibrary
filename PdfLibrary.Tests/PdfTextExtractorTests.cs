@@ -755,6 +755,85 @@ ET
             Assert.Equal(f.Text, text.Substring(f.TextOffset, f.Text.Length));
     }
 
+    /// <summary>A Form XObject inherits the font selected by its caller. The selected font is an
+    /// object in the caller's resource scope, not merely a name to resolve again in the form's own
+    /// resources. Losing that state bypassed Type0 /ToUnicode maps and emitted raw Identity-H bytes.</summary>
+    [Fact]
+    public void XObject_InheritsResolvedType0Font_FromCallerGraphicsState()
+    {
+        var toUnicode = new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes(@"
+3 beginbfchar
+<0003> <0041>
+<0004> <0042>
+<0005> <0043>
+endbfchar"));
+        var cidFont = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("CIDFontType2"),
+            [new PdfName("BaseFont")] = new PdfName("OuterCID"),
+        };
+        var outerFont = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("Type0"),
+            [new PdfName("BaseFont")] = new PdfName("OuterComposite"),
+            [new PdfName("Encoding")] = new PdfName("Identity-H"),
+            [new PdfName("DescendantFonts")] = new PdfArray { cidFont },
+            [new PdfName("ToUnicode")] = toUnicode,
+        };
+
+        // Deliberately shadow /OuterFont in the form's resources. The inherited selection must
+        // continue to point to outerFont until the form executes its own Tf operator.
+        var shadowFont = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("Type1"),
+            [new PdfName("BaseFont")] = new PdfName("Helvetica"),
+        };
+        var formStream = new PdfStream(new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Form"),
+            [new PdfName("Resources")] = new PdfDictionary
+            {
+                [new PdfName("Font")] = new PdfDictionary
+                {
+                    [new PdfName("OuterFont")] = shadowFont,
+                },
+            },
+        }, Encoding.ASCII.GetBytes("BT 10 20 Td <000300040005> Tj ET"));
+        var resources = new PdfResources(new PdfDictionary
+        {
+            [new PdfName("Font")] = new PdfDictionary
+            {
+                [new PdfName("OuterFont")] = outerFont,
+            },
+            [new PdfName("XObject")] = new PdfDictionary
+            {
+                [new PdfName("Fm1")] = formStream,
+            },
+        });
+
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(
+            Encoding.ASCII.GetBytes("BT /OuterFont 12 Tf ET /Fm1 Do"), resources);
+
+        Assert.Contains("ABC", text);
+        Assert.DoesNotContain('\0', text);
+        Assert.Equal("ABC", Assert.Single(fragments).Text);
+        Assert.Equal("OuterFont", fragments[0].FontName);
+    }
+
+    [Fact]
+    public void MissingFont_NullByte_IsReportedAsReplacementCharacter()
+    {
+        string text = PdfTextExtractor.ExtractText(
+            Encoding.ASCII.GetBytes("BT /Missing 12 Tf <0041> Tj ET"));
+
+        Assert.DoesNotContain('\0', text);
+        Assert.Contains("\uFFFDA", text);
+    }
+
     #endregion
 
     #region Font Information Tests

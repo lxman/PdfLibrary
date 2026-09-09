@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.6.2] - 2026-09-09
+
+### Fixed
+- **Text extraction preserves graphics and font state across every member of a page `/Contents`
+  array.** PDF defines the array as one logical content stream, so a Type0 font selected in one
+  member remains active in later members. PdfLibrary previously created a fresh extractor for each
+  member, bypassing the active font's `/ToUnicode` map and leaking raw two-byte Identity-H codes.
+- Form XObjects now inherit the caller's resolved font object without re-resolving its resource name
+  in the form's resource scope. Indirect form `/Resources` dictionaries are resolved as well.
+- An undecodable U+0000 is surfaced as U+FFFD instead of embedding a hidden NUL in extracted text.
+
 ## [2.6.1] - 2026-09-09
 
 ### Fixed
@@ -669,6 +680,8 @@ First stable release. Completes the *load → edit → optimize* story: a loaded
 | 2.4.0 | 2026-07-09 | Read-only conformance preflight (PDF/A-2b/2u/3b, PDF/X-4, PDF/UA-1); CMYK / colour-managed render fidelity batch (Ghent Workgroup); 16-bit images; optional content; mesh shadings; transparency-group SPI; text-extraction fixes. |
 | 2.5.0 | 2026-07-20 | Embedded-files read API + PDF/A-3 authoring (`AddEmbeddedFile`/`SetRawXmp`/`AddOutputIntent`); Tagged-PDF tree, output-intent, and page-colorant read APIs; broad PDF/A-2b + full PDF/UA-1 + PDF/X-4 conformance coverage (0 false positives); CFF/text/width and rendering-robustness fixes. |
 | 2.5.2 | 2026-07-29 | Reserved-name direct colour application on the CMYK soft-proof path; atomic-save retry on transient Windows locks; colour-gap baseline pins (G-8 … G-14) so no future colour fix lands unnoticed. |
+| 2.6.1 | 2026-09-09 | Malformed classic-xref repair; inferred text spaces from `TJ` gaps; text-layer quality diagnostics for OCR routing. |
+| 2.6.2 | 2026-09-09 | Preserves font state across page content arrays and Form XObjects so `/ToUnicode` decoding is retained; extracted text no longer contains hidden U+0000 characters. |
 
 ---
 
