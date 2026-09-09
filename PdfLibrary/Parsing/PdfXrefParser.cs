@@ -55,6 +55,7 @@ internal class PdfXrefParser
     private PdfXrefTable ParseTraditionalXRef()
     {
         var table = new PdfXrefTable();
+        var subsections = new List<(int FirstObjectNumber, List<PdfXrefEntry> Entries)>();
 
         // Read "xref" keyword
         string? keyword = ReadLine();
@@ -90,16 +91,83 @@ internal class PdfXrefParser
             if (!int.TryParse(parts[1], out int count))
                 throw new PdfParseException($"Invalid entry count: {parts[1]}");
 
-            // Read entries for this subsection
+            // Read entries for this subsection. Delay merging until the trailer's /Size is
+            // available: a known producer writes the object-0 free-list head while declaring
+            // the subsection as starting at 1, shifting every entry by one object number.
+            var entries = new List<PdfXrefEntry>(Math.Max(0, count));
             for (var i = 0; i < count; i++)
             {
                 int objectNumber = firstObjectNumber + i;
                 PdfXrefEntry entry = ParseEntry(objectNumber);
+                entries.Add(entry);
+            }
+
+            subsections.Add((firstObjectNumber, entries));
+        }
+
+        int? declaredSize = TryReadTrailerSize();
+        foreach ((int firstObjectNumber, List<PdfXrefEntry> entries) in subsections)
+        {
+            bool resetStartToZero = IsMisnumberedObjectZeroSubsection(
+                firstObjectNumber, entries, declaredSize);
+
+            for (var i = 0; i < entries.Count; i++)
+            {
+                PdfXrefEntry entry = entries[i];
+                if (resetStartToZero)
+                {
+                    entry = new PdfXrefEntry(
+                        i,
+                        entry.ByteOffset,
+                        entry.GenerationNumber,
+                        entry.IsInUse,
+                        entry.EntryType);
+                }
+
                 table.Add(entry);
             }
         }
 
         return table;
+    }
+
+    private int? TryReadTrailerSize()
+    {
+        long trailerPosition = _stream.Position;
+        try
+        {
+            var trailerParser = new PdfTrailerParser(_stream);
+            (PdfTrailer trailer, _) = trailerParser.Parse();
+            return trailer.Size;
+        }
+        catch (PdfParseException)
+        {
+            // Trailer parsing remains the caller's responsibility. If this optional look-ahead
+            // cannot establish /Size, retain the subsection numbering exactly as declared.
+            return null;
+        }
+        finally
+        {
+            _stream.Position = trailerPosition;
+        }
+    }
+
+    private static bool IsMisnumberedObjectZeroSubsection(
+        int firstObjectNumber,
+        IReadOnlyList<PdfXrefEntry> entries,
+        int? declaredSize)
+    {
+        if (firstObjectNumber <= 0 || entries.Count == 0 || declaredSize is null)
+            return false;
+
+        PdfXrefEntry firstEntry = entries[0];
+        bool isObjectZeroFreeHead =
+            firstEntry.EntryType == PdfXrefEntryType.Free &&
+            firstEntry.ByteOffset == 0 &&
+            firstEntry.GenerationNumber == 65535;
+
+        return isObjectZeroFreeHead &&
+               (long)firstObjectNumber + entries.Count > declaredSize.Value;
     }
 
     /// <summary>
