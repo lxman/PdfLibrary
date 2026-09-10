@@ -51,7 +51,7 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
                 : spec.ContainsKey(F) && spec.ContainsKey(UF);
             if (!fufOk)
             {
-                yield return Error(context, isUa1
+                yield return Error(context, spec, isUa1
                     ? "An embedded-file specification must contain non-empty /F and /UF keys (PDF/UA-1)."
                     : "An embedded-file specification with /EF must contain both /F and /UF keys.");
             }
@@ -62,14 +62,14 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
             // 6.8-t3 (PDF/A-3): the file spec must declare its associated-file relationship.
             if (!spec.ContainsKey(AFRelationship))
             {
-                yield return Error(context,
+                yield return Error(context, spec,
                     "An embedded file specification must contain an /AFRelationship key (PDF/A-3).");
             }
             // 6.8-t4 (PDF/A-3): once it declares /AFRelationship it must actually be an associated file,
             // i.e. referenced from an /AF array (on the catalog or a page).
             else if (spec.IsIndirect && !associatedFiles.Contains(spec.ObjectNumber))
             {
-                yield return Error(context,
+                yield return Error(context, spec,
                     "An embedded file declares /AFRelationship but is not referenced from any /AF "
                     + "associated-files array (PDF/A-3).");
             }
@@ -80,7 +80,7 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
                 string? subtype = context.ResolveName(stream.Dictionary.Get("Subtype"));
                 if (subtype is null || !MimeType.IsMatch(subtype))
                 {
-                    yield return Error(context,
+                    yield return Error(context, spec,
                         $"An embedded file's /Subtype '{subtype ?? "(none)"}' is not a valid MIME type.");
                 }
             }
@@ -138,7 +138,7 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
     private static bool NonEmpty(ConformanceContext context, PdfDictionary spec, string key) =>
         context.Resolve(spec.Get(key)) is PdfString s && s.Value.Length > 0;
 
-    private Finding Error(ConformanceContext context, string message) => new()
+    private Finding Error(ConformanceContext context, PdfDictionary spec, string message) => new()
     {
         RuleId = RuleId,
         Severity = FindingSeverity.Error,
@@ -146,5 +146,6 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
         Clause = ConformanceClauses.For(context.Target,
             context.Target == ConformanceProfile.PdfUA1 ? "7.11" : "6.8"),
         Message = message,
+        ObjectNumber = spec.IsIndirect ? spec.ObjectNumber : null,
     };
 }

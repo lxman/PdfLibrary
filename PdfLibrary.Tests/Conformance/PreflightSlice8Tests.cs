@@ -71,6 +71,7 @@ public class PreflightSlice8Tests
         var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: false, afRelationship: null, referencedByAF: false));
         Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA2b)));
         Assert.Equal("embedded-file", f.RuleId);
+        Assert.Equal(10, f.ObjectNumber);
     }
 
     [Fact]
@@ -84,21 +85,24 @@ public class PreflightSlice8Tests
     public void Embedded_file_missing_AFRelationship_is_flagged_in_part3() // 6.8-t3
     {
         var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: null, referencedByAF: true));
-        Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+        Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+        Assert.Equal(10, f.ObjectNumber);
     }
 
     [Fact]
     public void Embedded_file_not_referenced_by_AF_is_flagged_in_part3() // 6.8-t4
     {
         var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: "Data", referencedByAF: false));
-        Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+        Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+        Assert.Equal(10, f.ObjectNumber);
     }
 
     [Fact]
     public void Embedded_file_with_invalid_mime_subtype_is_flagged_in_part3() // 6.8-t1
     {
         var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: "Data", referencedByAF: true, subtype: "notmime"));
-        Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+        Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+        Assert.Equal(10, f.ObjectNumber);
     }
 
     [Fact]
@@ -117,6 +121,7 @@ public class PreflightSlice8Tests
         Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfUA1)));
         Assert.Equal("embedded-file", f.RuleId);
         Assert.Equal(ConformanceClauses.For(ConformanceProfile.PdfUA1, "7.11"), f.Clause);
+        Assert.Equal(10, f.ObjectNumber);
     }
 
     [Fact]
@@ -170,6 +175,32 @@ public class PreflightSlice8Tests
     {
         Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(DocWithFileAttachment(hasUF: false), ConformanceProfile.PdfUA1)));
         Assert.Equal(ConformanceClauses.For(ConformanceProfile.PdfUA1, "7.11"), f.Clause);
+        Assert.Equal(10, f.ObjectNumber);
+    }
+
+    [Fact]
+    public void Direct_embedded_file_spec_has_no_object_number()
+    {
+        var doc = Doc((d, c) =>
+        {
+            d.AddObject(11, 0, new PdfStream(new PdfDictionary(), new byte[] { 1 }));
+            var spec = new PdfDictionary
+            {
+                [N("Type")] = N("Filespec"),
+                [N("F")] = Str("file.txt"),
+                [N("EF")] = new PdfDictionary { [N("F")] = Ref(11) },
+            };
+            c[N("Names")] = new PdfDictionary
+            {
+                [N("EmbeddedFiles")] = new PdfDictionary
+                {
+                    [N("Names")] = new PdfArray(Str("f"), spec),
+                },
+            };
+        });
+
+        Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA2b)));
+        Assert.Null(f.ObjectNumber);
     }
 
     [Fact]
