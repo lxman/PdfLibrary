@@ -57,6 +57,21 @@ public class ParityOracleTests(ITestOutputHelper output)
                 ["5", "7.1", "7.3", "7.4.2", "7.4.4", "7.5", "7.9", "7.10", "7.11", "7.15", "7.16", "7.18.1", "7.18.2", "7.18.3", "7.18.4", "7.18.5", "7.18.6.2", "7.18.8", "7.20", "7.21.3.2", "7.21.3.3", "7.21.4.2", "7.21.5", "7.21.6", "7.21.7", "7.21.8"],
         };
 
+    /// <summary>
+    /// Clause-specific detection floors for important partially covered clauses. These cannot join
+    /// <see cref="ParityFullClauses"/> until every veraPDF-positive fixture is detected, but an
+    /// overall profile floor is too coarse: unrelated gains could hide lost recall on one clause.
+    /// Raise a floor as coverage grows; lower it only with an enumerated, reviewed trade-off.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<(ConformanceProfile Profile, string Clause), int>
+        ParityPartialClauseDetectionFloors =
+            new Dictionary<(ConformanceProfile Profile, string Clause), int>
+            {
+                // Issue 32: current coverage is 8/11. This preserves the clause-level recall floor
+                // while the remaining classic-Type1/predefined-charset shapes stay outside the safe resolver.
+                [(ConformanceProfile.PdfA2b, "6.2.11.4.1")] = 8,
+            };
+
     [Fact]
     public void No_false_positives_vs_veraPDF()
     {
@@ -108,6 +123,30 @@ public class ParityOracleTests(ITestOutputHelper output)
         Assert.True(misses.Count == 0,
             $"{misses.Count} regression(s) on a fully-covered clause: {string.Join(", ", misses.Take(20))}"
             + (misses.Count > 20 ? " …" : ""));
+    }
+
+    [Fact]
+    public void Partially_covered_clause_detection_does_not_regress()
+    {
+        Assert.SkipUnless(CorpusHarness.IsAvailable && ParitySnapshot.IsAvailable, Skip);
+
+        var regressions = new List<string>();
+        foreach (((ConformanceProfile profile, string clause), int floor) in
+                 ParityPartialClauseDetectionFloors)
+        {
+            ParityComparison.ProfileComparison pc = ParityComparison.All.Single(p => p.Profile == profile);
+            int referenceCount = pc.Files.Count(f => f.VeraClauses.Contains(clause));
+            int detected = pc.Files.Count(f =>
+                f.VeraClauses.Contains(clause) && f.PdfLibraryClauses.Contains(clause));
+
+            output.WriteLine($"{profile}/{clause}: detected {detected}/{referenceCount} (floor {floor})");
+            if (detected < floor)
+                regressions.Add($"{profile}/{clause}: {detected} < floor {floor}");
+        }
+
+        Assert.True(regressions.Count == 0,
+            "partial-clause detection regressed vs the reference: " + string.Join(", ", regressions)
+            + ". Raise floors as coverage grows; lower one only for an enumerated, reviewed trade-off.");
     }
 
     [Fact]
