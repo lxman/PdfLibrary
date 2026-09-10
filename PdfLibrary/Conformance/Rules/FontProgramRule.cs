@@ -35,9 +35,10 @@ namespace PdfLibrary.Conformance.Rules;
 ///     (with an embedded charset) via the tri-state <see cref="ResolveSimpleGlyph"/> resolver, which only
 ///     ever reports a confident absence and returns <c>Unknown</c> (skip, no finding) whenever the
 ///     code→glyph path is not reproducible here — symbolic TrueType (declared, or carrying only a (3,0)
-///     Windows-Symbol cmap, or lacking a trustworthy Unicode-capable cmap subtable) with no usable Unicode
-///     cmap path, a supplementary-plane AGL Unicode value (would truncate through a 16-bit cmap lookup), an
-///     encoding name with no AGL Unicode, or a predefined-charset CFF. Not yet implemented for Type0 (a
+///     Windows-Symbol cmap, or lacking a trustworthy Unicode-capable cmap subtable) with neither a usable
+///     Unicode cmap path nor an explicit <c>post</c> name mapping, a supplementary-plane AGL Unicode value
+///     without a <c>post</c> mapping (the cmap lookup would truncate), an encoding name with neither AGL
+///     Unicode nor a <c>post</c> mapping, or a predefined-charset CFF. Not yet implemented for Type0 (a
 ///     later slice covers CIDToGIDMap→out-of-range).</item>
 ///   <item><b>font metrics (6.2.11.5 / 7.21.5):</b> the PDF-declared width of each used glyph
 ///     (<c>/Widths</c> for simple, <c>/W</c>÷<c>/DW</c> for CID) must match the embedded program's advance
@@ -362,8 +363,9 @@ internal sealed class FontProgramRule : IConformanceRule
     /// Resolves a simple-font code to a program glyph with a confidence flag, the FP-safe way. Returns
     /// <see cref="SimpleGlyphResolution.Unknown"/> whenever the standard code→glyph path is not reproducible
     /// here (symbolic TrueType — declared or carrying only a (3,0) Windows-Symbol cmap — with no trustworthy
-    /// Unicode-capable cmap subtable, an encoding name with no Unicode, a supplementary-plane Unicode value
-    /// that a 16-bit cmap lookup would truncate, a predefined-charset CFF, OR — CFF/Type1 only — a code
+    /// Unicode-capable cmap subtable and no explicit <c>post</c> name mapping, an encoding name with neither
+    /// Unicode nor a <c>post</c> mapping, a supplementary-plane Unicode value with no <c>post</c> fallback
+    /// (the 16-bit cmap lookup would truncate), a predefined-charset CFF, OR — CFF/Type1 only — a code
     /// whose name was DERIVED by <see cref="PdfFontEncoding.SetUnicode"/> rather than assigned by the
     /// document's own encoding data (see <see cref="PdfFontEncoding.IsDerivedName"/>). That CFF-only scoping
     /// is deliberate (issues 27-28 follow-up review round 2, 2026-08-16): the CFF branch looks a name up
@@ -371,9 +373,10 @@ internal sealed class FontProgramRule : IConformanceRule
     /// something the document or font program asserts — genuinely cannot authorize a "confident absence"
     /// there (Task 10's GlyphList completion exposed exactly this: more reverse-AGL entries meant more codes
     /// that previously had NO name at all now carry a guessed one, which the CFF branch then treated as
-    /// authoritative). The TrueType branch below, by contrast, only ever uses the name as a courier for the
-    /// encoding's OWN Unicode value (<c>GlyphList.GetUnicode(glyphName)</c>) before keying the font's cmap
-    /// by that Unicode value directly — and a derived name's Unicode IS the encoding's own Annex-D value
+    /// authoritative). The TrueType branch below, by contrast, bases a confident absence on the encoding
+    /// name's Unicode value (<c>GlyphList.GetUnicode(glyphName)</c>) missing from the font's cmap; its
+    /// standards-required <c>post</c> fallback can only override that result when the program explicitly
+    /// proves the name present. A derived name's Unicode IS the encoding's own Annex-D value
     /// (SetUnicode wrote it; GetGlyphName's reverse lookup is a lossless inversion of the same map), so
     /// whether the name happened to arrive via SetCharacterName or SetUnicode carries no information for
     /// this branch — gating on it would only suppress genuine TrueType detections for no analytical reason.
@@ -398,11 +401,19 @@ internal sealed class FontProgramRule : IConformanceRule
             if (symbolic || metrics.HasSymbolCmapEncoding())
                 return SimpleGlyphResolution.Unknown;
 
-            // Trustworthy only through a real cmap keyed by the encoding name's Unicode value. Without an
-            // AGL Unicode for the name (symbolic / custom name) we cannot tell absence from a lookup gap.
+            // ISO 32000's nonsymbolic TrueType procedure also permits resolving the encoding glyph name
+            // through an explicit format-2 post table. That path is independently sufficient to prove
+            // presence, even when a custom name has no AGL value or the font lacks a Unicode cmap. It matters
+            // especially for AGL private-use names (for example /Asmall -> U+F761), which subset cmap tables
+            // commonly omit even while post names the actual glyph. A post miss alone never proves absence.
+            int postGid = glyphName is null ? -1 : metrics.Post?.GetGlyphIndex(glyphName) ?? -1;
+            bool presentByPost = postGid > 0 && postGid < metrics.NumGlyphs;
+
+            // Otherwise follow the usual AGL-Unicode -> cmap path. The parser exposes only explicit format-2
+            // post mappings, so absent/unsupported post data cannot manufacture a false Present result.
             string? unicode = glyphName is null ? null : GlyphList.GetUnicode(glyphName);
             if (string.IsNullOrEmpty(unicode))
-                return SimpleGlyphResolution.Unknown;
+                return presentByPost ? SimpleGlyphResolution.Present : SimpleGlyphResolution.Unknown;
             int cp = char.ConvertToUtf32(unicode, 0);
             // A supplementary-plane code point (cp > 0xFFFF) would truncate through GetGlyphId's ushort
             // parameter — and HasUnicodeCmapEncoding requires an actual Unicode-capable subtable (a plain
@@ -410,9 +421,14 @@ internal sealed class FontProgramRule : IConformanceRule
             // reliable direct code, so GetGlyphId would fall back to "code is the GID", a rendering
             // heuristic, not a trustworthy absence signal).
             if (cp > 0xFFFF || !metrics.HasUnicodeCmapEncoding())
-                return SimpleGlyphResolution.Unknown;
+                return presentByPost ? SimpleGlyphResolution.Present : SimpleGlyphResolution.Unknown;
             ushort gid = metrics.GetGlyphId((ushort)cp);
-            return gid == 0 ? SimpleGlyphResolution.NotDef : SimpleGlyphResolution.Present;
+            if (gid != 0)
+                return SimpleGlyphResolution.Present;
+
+            return presentByPost
+                ? SimpleGlyphResolution.Present
+                : SimpleGlyphResolution.NotDef;
         }
 
         // Simple CFF / Type1: code → name → charset GID. Gated (by the caller) on an embedded charset, so a
