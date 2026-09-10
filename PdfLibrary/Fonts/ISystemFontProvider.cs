@@ -59,3 +59,14 @@ public interface ISystemFontProvider
     /// </summary>
     IReadOnlyList<SystemFontFace> EnumerateFaces() => [];
 }
+
+/// <summary>
+/// Internal staged-resolution seam for provider compositions that must insert policy after a
+/// locator has exhausted the document's explicit face/family request but before it manufactures a
+/// generic substitute. It is deliberately not public API: third-party providers remain single-stage
+/// and continue through <see cref="ISystemFontProvider.Resolve"/> unchanged.
+/// </summary>
+internal interface IStagedSystemFontProvider
+{
+    FontMatch? ResolveBeforeSyntheticFallback(FontRequest request);
+}

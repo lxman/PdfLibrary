@@ -5,7 +5,7 @@ namespace PdfLibrary.Fonts;
 /// substitutes for standard-14 fonts among the fonts installed on the system and returns their
 /// raw bytes. Reading installed fonts is not redistribution.
 /// </summary>
-public sealed partial class SystemFontLocator : ISystemFontProvider
+public sealed partial class SystemFontLocator : ISystemFontProvider, IStagedSystemFontProvider
 {
     private readonly FontMetadataIndex _index;
 
@@ -78,7 +78,13 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
     /// <summary>The metadata ladder. Step 1 PostScript name, step 2 aliased family, step 3 the
     /// synthetic standard-14 name — each matched against the font's OWN metadata rather than against
     /// a filename. Returns null when all three miss; slice 1 adds no fallback floor.</summary>
-    public FontMatch? Resolve(FontRequest request)
+    public FontMatch? Resolve(FontRequest request) => Resolve(request, includeSyntheticFallback: true);
+
+    /// <inheritdoc />
+    FontMatch? IStagedSystemFontProvider.ResolveBeforeSyntheticFallback(FontRequest request) =>
+        Resolve(request, includeSyntheticFallback: false);
+
+    private FontMatch? Resolve(FontRequest request, bool includeSyntheticFallback)
     {
         (string family, bool nameBold, bool nameItalic) = Base35Aliases.Split(request.BaseFont);
         bool bold = request.Bold || nameBold;
@@ -112,7 +118,7 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
 
         // Step 3: the synthetic standard-14 name, by PostScript name then by aliased family. This is
         // what keeps a machine with no base-35 clones on its own core serif/sans/mono.
-        if (hit is null)
+        if (hit is null && includeSyntheticFallback)
         {
             // Descriptor flags and name spelling are independent signals and either one alone decides
             // the family: a subset name is opaque while /Flags says Serif, and a descriptor can carry

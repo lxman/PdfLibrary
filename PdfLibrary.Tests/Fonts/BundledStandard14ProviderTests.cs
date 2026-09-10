@@ -5,7 +5,9 @@ namespace PdfLibrary.Tests.Fonts;
 
 /// <summary>
 /// The bundled provider is POLICY ONLY — it holds no font bytes. It decides which /BaseFont names
-/// a bundled face may answer for, and hands everything else to the inner provider unchanged.
+/// a bundled face may answer for. With the default staged locator it can also answer after an
+/// unknown face/family genuinely misses but before the locator's synthetic system-font floor;
+/// non-staged providers still receive non-alias requests unchanged.
 ///
 /// <para>These tests use a fake byte source and a recording inner provider, so they assert the
 /// routing decisions without needing any real font file. Whether the bytes are a real Liberation
@@ -22,6 +24,29 @@ public class BundledStandard14ProviderTests
         public string? FindFirstAvailable(IEnumerable<string> candidates) => null;
         public void RefreshCache() { }
         public FontMatch? Resolve(FontRequest request) { Asked.Add(request.BaseFont); return null; }
+    }
+
+    /// <summary>Models the default locator's three-stage contract: explicit PostScript/family stages
+    /// can miss or hit before its public Resolve continues to a synthetic system-font fallback.</summary>
+    private sealed class StagedInner(FontMatch? explicitMatch, FontMatch? syntheticFallback)
+        : ISystemFontProvider, IStagedSystemFontProvider
+    {
+        public readonly List<string> BeforeSyntheticAsked = [];
+        public readonly List<string> FullAsked = [];
+        public IReadOnlyCollection<string> GetAvailableFontFamilies() => [];
+        public bool IsFontAvailable(string familyName) => false;
+        public string? FindFirstAvailable(IEnumerable<string> candidates) => null;
+        public void RefreshCache() { }
+        public FontMatch? ResolveBeforeSyntheticFallback(FontRequest request)
+        {
+            BeforeSyntheticAsked.Add(request.BaseFont);
+            return explicitMatch;
+        }
+        public FontMatch? Resolve(FontRequest request)
+        {
+            FullAsked.Add(request.BaseFont);
+            return syntheticFallback;
+        }
     }
 
     /// <summary>Answers for every face with a 1-byte marker, so "which face was requested" is the
@@ -83,10 +108,10 @@ public class BundledStandard14ProviderTests
     [InlineData("AvantGarde-Book")]
     [InlineData("NewCenturySchlbk-Roman")]
     [InlineData("ZapfChancery-MediumItalic")]
-    // A genuinely named face is not ours to substitute.
+    // A genuinely named face is not a direct alias. A non-staged inner receives it unchanged.
     [InlineData("FooCorpSans")]
     [InlineData("ABCDEF+FooCorpSans")]
-    public void EverythingElseFallsThroughToTheInnerProvider(string baseFont)
+    public void Unsupported_and_nonstaged_unknown_requests_fall_through(string baseFont)
     {
         var bytes = new FakeBytes();
         var inner = new RecordingInner();
@@ -118,5 +143,67 @@ public class BundledStandard14ProviderTests
 
         Assert.Null(provider.Resolve(Req("Helvetica")));
         Assert.Equal(["Helvetica"], inner.Asked);
+    }
+
+    [Fact]
+    public void Synthetic_fallback_uses_bundled_face_after_explicit_locator_stages_miss()
+    {
+        var bytes = new FakeBytes();
+        var systemFallback = new FontMatch([0x22], 0);
+        var inner = new StagedInner(explicitMatch: null, systemFallback);
+        var provider = new BundledStandard14Provider(bytes.For, inner);
+
+        FontMatch match = Assert.IsType<FontMatch>(provider.Resolve(Req("AlArabiya")));
+
+        Assert.Equal([0x01], match.Data);
+        Assert.Equal(["AlArabiya"], inner.BeforeSyntheticAsked);
+        Assert.Empty(inner.FullAsked);
+        Assert.Equal(["LiberationSans-Regular"], bytes.Requested);
+    }
+
+    [Fact]
+    public void Explicit_locator_match_wins_before_bundled_synthetic_fallback()
+    {
+        var explicitMatch = new FontMatch([0x33], 0);
+        var inner = new StagedInner(explicitMatch, syntheticFallback: new FontMatch([0x22], 0));
+        var bytes = new FakeBytes();
+        var provider = new BundledStandard14Provider(bytes.For, inner);
+
+        FontMatch match = Assert.IsType<FontMatch>(provider.Resolve(Req("AlArabiya")));
+
+        Assert.Same(explicitMatch, match);
+        Assert.Equal(["AlArabiya"], inner.BeforeSyntheticAsked);
+        Assert.Empty(inner.FullAsked);
+        Assert.Empty(bytes.Requested);
+    }
+
+    [Fact]
+    public void Missing_bundled_synthetic_face_preserves_the_locators_full_fallback()
+    {
+        var systemFallback = new FontMatch([0x22], 0);
+        var inner = new StagedInner(explicitMatch: null, systemFallback);
+        var provider = new BundledStandard14Provider(_ => null, inner);
+
+        Assert.Same(systemFallback, provider.Resolve(Req("AlArabiya")));
+        Assert.Equal(["AlArabiya"], inner.BeforeSyntheticAsked);
+        Assert.Equal(["AlArabiya"], inner.FullAsked);
+    }
+
+    [Theory]
+    [InlineData("Symbol")]
+    [InlineData("ZapfDingbats")]
+    [InlineData("Palatino-Roman")]
+    [InlineData("Bookman-Demi")]
+    public void Unsupported_base35_family_never_synthesizes_a_Latin_bundled_face(string baseFont)
+    {
+        var systemFallback = new FontMatch([0x22], 0);
+        var inner = new StagedInner(explicitMatch: null, systemFallback);
+        var bytes = new FakeBytes();
+        var provider = new BundledStandard14Provider(bytes.For, inner);
+
+        Assert.Same(systemFallback, provider.Resolve(Req(baseFont)));
+        Assert.Equal([baseFont], inner.BeforeSyntheticAsked);
+        Assert.Equal([baseFont], inner.FullAsked);
+        Assert.Empty(bytes.Requested);
     }
 }

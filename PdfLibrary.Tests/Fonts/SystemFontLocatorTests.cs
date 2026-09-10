@@ -90,6 +90,25 @@ public class SystemFontLocatorTests
         Assert.Same(a, b);
     }
 
+    [Fact]
+    public void Staged_resolution_stops_before_the_public_synthetic_fallback()
+    {
+        string dir = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            string source = Path.Combine(
+                AppContext.BaseDirectory, "Resources", "Liberation", "LiberationSans-Regular.ttf");
+            File.Copy(source, Path.Combine(dir, "LiberationSans-Regular.ttf"));
+
+            var locator = new SystemFontLocator([dir]);
+            var request = new FontRequest("AlArabiya", false, false, false, false, false, false);
+
+            Assert.Null(((IStagedSystemFontProvider)locator).ResolveBeforeSyntheticFallback(request));
+            Assert.NotNull(locator.Resolve(request));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     // Integration: depends on system-installed fonts, so it is opt-in (not run in CI).
     [Fact]
     [Trait("Category", "LocalOnly")]

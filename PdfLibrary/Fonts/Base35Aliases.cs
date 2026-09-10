@@ -51,4 +51,10 @@ internal static class Base35Aliases
         string key = (family ?? "").Replace(" ", string.Empty);
         return Table.TryGetValue(key, out string[]? aliases) ? aliases : [family ?? ""];
     }
+
+    /// <summary>Whether <paramref name="family"/> is one of the explicit base-35 alias families.
+    /// Used by provider policy that must distinguish an unknown face eligible for a generic
+    /// serif/sans/mono fallback from Symbol/Dingbats and the unsupported base-35 families.</summary>
+    public static bool IsKnownFamily(string family) =>
+        Table.ContainsKey((family ?? "").Replace(" ", string.Empty));
 }

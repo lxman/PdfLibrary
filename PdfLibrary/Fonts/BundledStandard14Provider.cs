@@ -2,7 +2,9 @@ namespace PdfLibrary.Fonts;
 
 /// <summary>
 /// Answers standard-14 substitution requests from a bundled font set, ahead of the system font
-/// ladder, and delegates everything else to <paramref name="inner"/>.
+/// ladder. With the default staged locator, an unknown requested face gets its exact/family chance
+/// first and bundled policy then runs before the locator's synthetic system-font floor. Non-staged
+/// providers receive non-alias requests unchanged.
 ///
 /// <para><b>Why this exists.</b> Liberation is installed on both Windows and Linux, but
 /// <see cref="Base35Aliases"/> ranks <c>Nimbus Sans</c> ahead of <c>Liberation Sans</c> for
@@ -36,11 +38,52 @@ public sealed class BundledStandard14Provider(
 
     public FontMatch? Resolve(FontRequest request)
     {
+        if (TryResolveBundled(request, out FontMatch? directBundled))
+            return directBundled ?? inner.Resolve(request);
+
+        // The default locator's public Resolve hides whether its answer came from the document's
+        // explicit PostScript/family request or from its internally synthesized standard-14 floor.
+        // Insert bundled policy at that exact boundary: preserve a real requested face when one
+        // exists, but let the host's bundled Liberation face win before Nimbus/system fallback.
+        // Non-staged third-party providers retain the original single delegation unchanged.
+        if (inner is IStagedSystemFontProvider staged)
+        {
+            FontMatch? explicitMatch = staged.ResolveBeforeSyntheticFallback(request);
+            if (explicitMatch is not null)
+                return explicitMatch;
+
+            (string family, _, _) = Base35Aliases.Split(request.BaseFont ?? "");
+            if (!Base35Aliases.IsKnownFamily(family))
+            {
+                (bool nameSerif, bool nameMono, bool nameBold, bool nameItalic) =
+                    SubstituteFontResolver.Classify(request.BaseFont ?? "", descriptor: null);
+                string synthetic = SubstituteFontResolver.SyntheticStd14Name(
+                    request.Serif || nameSerif,
+                    request.Mono || nameMono,
+                    request.Bold || nameBold,
+                    request.Italic || nameItalic);
+
+                if (TryResolveBundled(request with { BaseFont = synthetic }, out FontMatch? syntheticBundled)
+                    && syntheticBundled is not null)
+                    return syntheticBundled;
+            }
+        }
+
+        return inner.Resolve(request);
+    }
+
+    /// <summary>Returns true when the request is within this provider's supported alias policy;
+    /// <paramref name="match"/> is null when it is supported but the host supplied no bytes.</summary>
+    private bool TryResolveBundled(FontRequest request, out FontMatch? match)
+    {
         (string family, bool nameBold, bool nameItalic) = Base35Aliases.Split(request.BaseFont ?? "");
         string key = family.Replace(" ", string.Empty);
 
         if (!Families.TryGetValue(key, out string? liberationFamily))
-            return inner.Resolve(request);
+        {
+            match = null;
+            return false;
+        }
 
         bool bold = request.Bold || nameBold;
         bool italic = request.Italic || nameItalic;
@@ -53,8 +96,8 @@ public sealed class BundledStandard14Provider(
         };
 
         byte[]? data = bytesForFace($"{liberationFamily}-{style}");
-        // A host that ships no bundled faces must behave exactly as it did before this class existed.
-        return data is null ? inner.Resolve(request) : new FontMatch(data, 0);
+        match = data is null ? null : new FontMatch(data, 0);
+        return true;
     }
 
     public IReadOnlyCollection<string> GetAvailableFontFamilies() => inner.GetAvailableFontFamilies();
