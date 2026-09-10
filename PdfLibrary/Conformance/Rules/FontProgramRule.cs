@@ -39,8 +39,8 @@ namespace PdfLibrary.Conformance.Rules;
 ///     Windows-Symbol cmap, or lacking a trustworthy Unicode-capable cmap subtable) with neither a usable
 ///     Unicode cmap path nor an explicit <c>post</c> name mapping, a supplementary-plane AGL Unicode value
 ///     without a <c>post</c> mapping (the cmap lookup would truncate), an encoding name with neither AGL
-///     Unicode nor a <c>post</c> mapping, or a predefined-charset CFF. Not yet implemented for Type0 (a
-///     later slice covers CIDToGIDMap→out-of-range).</item>
+///     Unicode nor a <c>post</c> mapping, or a predefined-charset CFF. For Type0/CIDFontType2, a
+///     non-zero CIDToGIDMap result at or beyond the program's glyph count is confidently absent.</item>
 ///   <item><b>font metrics (6.2.11.5 / 7.21.5):</b> the PDF-declared width of each used glyph
 ///     (<c>/Widths</c> for simple, <c>/W</c>÷<c>/DW</c> for CID) must match the embedded program's advance
 ///     width. Implemented for simple TrueType fonts (advance from glyf/hmtx via the cmap), simple CFF / Type1C
@@ -102,7 +102,7 @@ internal sealed class FontProgramRule : IConformanceRule
 
             foreach (Finding f in font is Type0Font type0
                          ? CheckType0(context, type0, metrics, usage.Codes, usage.VisibleCodes,
-                             usage.ShowedIncompleteCode, notdefReported, metricsReported)
+                             usage.ShowedIncompleteCode, notdefReported, metricsReported, presentReported)
                          : CheckSimple(context, font, metrics, usage.Codes, usage.VisibleCodes, metricsReported,
                              notdefReported, presentReported))
             {
@@ -115,7 +115,7 @@ internal sealed class FontProgramRule : IConformanceRule
     private IEnumerable<Finding> CheckType0(
         ConformanceContext context, Type0Font font, EmbeddedFontMetrics metrics,
         IReadOnlyCollection<int> codes, IReadOnlyCollection<int> visibleCodes, bool showedIncompleteCode,
-        HashSet<string> notdefReported, HashSet<string> metricsReported)
+        HashSet<string> notdefReported, HashSet<string> metricsReported, HashSet<string> presentReported)
     {
         if (font.DescendantFont is not CidFont cid
             || ResolveCompositeEncoding(context, font) is not { } encoding)
@@ -177,11 +177,20 @@ internal sealed class FontProgramRule : IConformanceRule
         // a nominalWidthX/defaultWidthX confusion made omitted-width glyphs diverge by hundreds of units;
         // with that fixed, a conformant CFF-keyed font round-trips well inside the tolerance.
         var visibleCids = new List<int>();
+        bool absentHit = false;
         foreach (int code in visibleCodes)
         {
             int? mappedCid = MapCodeToCid(code);
             if (mappedCid is >= 0 and <= ushort.MaxValue)
+            {
                 visibleCids.Add(mappedCid.Value);
+                if (!cidKeyedCff)
+                {
+                    int gid = cid.MapCidToGidStrict(mappedCid.Value);
+                    if (gid > 0 && gid >= metrics.NumGlyphs)
+                        absentHit = true;
+                }
+            }
         }
 
         double worstDiff = 0;
@@ -192,6 +201,11 @@ internal sealed class FontProgramRule : IConformanceRule
             yield return Make(context, font, "8",
                 $"The composite font {Name(font)} renders a character code that is, or maps to, the "
                 + ".notdef glyph (glyph 0).");
+
+        if (absentHit && presentReported.Add(DedupKey(font)))
+            yield return Make(context, font, "4.1",
+                $"The composite font {Name(font)} renders a glyph that is not present in the embedded "
+                + "font program.");
 
         if (worstDiff > WidthTolerance && metricsReported.Add(DedupKey(font)))
             yield return Make(context, font, "5",

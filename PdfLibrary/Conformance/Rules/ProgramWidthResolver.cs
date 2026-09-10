@@ -73,8 +73,8 @@ internal static class ProgramWidthResolver
             int gid = cidKeyedCff
                 ? metrics.GetGlyphIdByCid((ushort)cidValue)
                 : cid.MapCidToGidStrict(cidValue);
-            if (gid == 0)
-                continue; // .notdef has no meaningful width to compare
+            if (gid == 0 || gid >= metrics.NumGlyphs)
+                continue; // .notdef or an absent glyph has no meaningful width to compare
 
             yield return new WidthComparison(
                 cidValue, (ushort)gid, cid.GetCharacterWidth(cidValue),
