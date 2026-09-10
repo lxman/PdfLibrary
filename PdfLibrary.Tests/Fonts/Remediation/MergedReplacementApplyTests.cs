@@ -213,6 +213,47 @@ public sealed class MergedReplacementApplyTests
     }
 
     /// <summary>
+    /// Tracker issue 45's alleged last-write-wins path is disproved at the whole-face layer too:
+    /// each proposal registers a new stream and repoints only its own descriptor. Applying both
+    /// proposals therefore repairs both fonts; neither write can overwrite the other descriptor.
+    /// </summary>
+    [Fact]
+    public void Two_descriptors_sharing_the_input_stream_apply_independent_replacements_without_clobbering()
+    {
+        PdfDocument doc = ReplaceProgramFixtures.SharedProgramStreamDoc();
+        var provider = new StubFontProvider(ReplaceProgramFixtures.LiberationSansBytes());
+        FontRemediationProposal result = ReplaceProgramFixtures.Planner(provider)
+            .Propose(doc, [("font-program", 1), ("font-program", 7)]);
+        ReplaceProgramProposal[] replacements = result.Fonts.OfType<ReplaceProgramProposal>().ToArray();
+        Assert.Equal(2, replacements.Length);
+
+        using PdfDocumentEditor editor = doc.Edit();
+        foreach (ReplaceProgramProposal replacement in replacements)
+            editor.ReplaceCompositeProgram(replacement);
+
+        var ms = new MemoryStream();
+        editor.Save(ms);
+        byte[] savedBytes = ms.ToArray();
+        ms.Position = 0;
+        using PdfDocument reloaded = PdfDocument.Load(ms);
+
+        var descendant4 = Assert.IsType<PdfDictionary>(reloaded.GetObject(4));
+        var descendant14 = Assert.IsType<PdfDictionary>(reloaded.GetObject(14));
+        var descriptor2 = Assert.IsType<PdfDictionary>(Resolve(reloaded, descendant4.Get("FontDescriptor")));
+        var descriptor17 = Assert.IsType<PdfDictionary>(Resolve(reloaded, descendant14.Get("FontDescriptor")));
+        var programRef2 = Assert.IsType<PdfIndirectReference>(descriptor2.Get("FontFile2"));
+        var programRef17 = Assert.IsType<PdfIndirectReference>(descriptor17.Get("FontFile2"));
+        Assert.NotEqual(programRef2.ObjectNumber, programRef17.ObjectNumber);
+        Assert.Equal(replacements[0].Program,
+            Assert.IsType<PdfStream>(Resolve(reloaded, programRef2)).GetDecodedData(reloaded.Decryptor));
+        Assert.Equal(replacements[1].Program,
+            Assert.IsType<PdfStream>(Resolve(reloaded, programRef17)).GetDecodedData(reloaded.Decryptor));
+
+        PreflightResult after = Preflighter.Check(savedBytes, ConformanceProfile.PdfA2b);
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "font-program");
+    }
+
+    /// <summary>
     /// The guard: the planner's own direct-sharing output always carries an identical union map
     /// across targets naming the same descendant (Task 4's guarantee), but <c>ReplaceCompositeProgram</c>
     /// must not trust that blindly — <see cref="ReplaceProgramProposal"/>'s constructor is public, so a

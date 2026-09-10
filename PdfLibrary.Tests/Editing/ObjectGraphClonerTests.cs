@@ -143,4 +143,20 @@ public class ObjectGraphClonerTests
         Assert.Equal(42, targetLen.Value);
         Assert.NotSame(src7, targetLen);
     }
+
+    [Fact]
+    public void Clone_HexString_PreservesWrittenFormatAndLexicalFacts()
+    {
+        var source = new PdfDocument();
+        var target = PdfDocument.CreateEmpty();
+        var facts = new HexStringFacts(3, HasNonHexDigit: true);
+        var original = new PdfString([0xAB, 0xC0], PdfStringFormat.Hexadecimal, facts);
+
+        var clone = Assert.IsType<PdfString>(ObjectGraphCloner.CloneValue(target, source, original));
+
+        Assert.NotSame(original, clone);
+        Assert.Equal(original.Bytes, clone.Bytes);
+        Assert.Equal("<ABC0>", clone.ToPdfString());
+        Assert.Equal(facts, clone.HexFacts);
+    }
 }

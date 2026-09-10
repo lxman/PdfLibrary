@@ -105,7 +105,7 @@ internal static class ObjectGraphCloner
             case PdfReal real:
                 return new PdfReal(real.Value);
             case PdfString str:
-                return new PdfString(str.Bytes);
+                return new PdfString(str.Bytes, str.Format, str.HexFacts);
             default:
                 return obj; // PdfBoolean/PdfNull are immutable singletons; their identity fields don't affect output
         }

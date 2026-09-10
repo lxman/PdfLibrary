@@ -43,4 +43,27 @@ public sealed class ReplaceProgramFixturesShapeTests
         Assert.NotNull(descriptors[0]);
         Assert.Equal(descriptors[0], descriptors[1]);
     }
+
+    [Fact]
+    public void SharedProgramStreamDoc_two_descriptors_one_program_stream()
+    {
+        using PdfDocument doc = ReplaceProgramFixtures.SharedProgramStreamDoc();
+        IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(doc);
+        var holders = inventory.Where(e => e.ProgramHolderId is not null)
+            .Select(e => e.ProgramHolderId!.Value.ObjectNumber).Distinct().ToList();
+        Assert.True(holders.Count == 2,
+            $"Expected two holders; inventory was: {string.Join("; ", inventory.Select(e =>
+                $"id={e.Id.ObjectNumber}, holder={e.ProgramHolderId?.ObjectNumber}, kind={e.Kind}"))}");
+
+        List<int> descriptors = [.. holders.Select(h =>
+            Assert.IsType<PdfIndirectReference>(
+                Assert.IsType<PdfDictionary>(doc.GetObject(h)).Get("FontDescriptor")).ObjectNumber)];
+        Assert.Equal(2, descriptors.Distinct().Count());
+
+        List<int> programs = [.. descriptors.Select(d =>
+            Assert.IsType<PdfIndirectReference>(
+                Assert.IsType<PdfDictionary>(doc.GetObject(d)).Get("FontFile2")).ObjectNumber)];
+        Assert.Single(programs.Distinct());
+        Assert.Equal(3, programs[0]);
+    }
 }

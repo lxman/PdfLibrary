@@ -628,6 +628,41 @@ internal static class ReplaceProgramFixtures
     }
 
     /// <summary>
+    /// Tracker issue 45's third sharing shape: the two composite fonts retain distinct descendants
+    /// (4 and 14) and distinct descriptors (2 and 17), while both descriptors initially reference
+    /// the same physical <c>/FontFile2</c> stream (3). This differs from
+    /// <see cref="SharedDescriptorDoc"/>, where both descendants reference descriptor 2 itself.
+    ///
+    /// <para>The existing write operations replace a descriptor's <c>/FontFile2</c> reference with a
+    /// newly registered stream; they never mutate stream 3. Consequently the descriptors are
+    /// independent repair targets even though their input happens to share stream 3. In particular,
+    /// callers can safely give the two resulting programs different advances when their declarations
+    /// differ, which is the regression shape this fixture exists to preserve.</para>
+    /// </summary>
+    public static PdfDocument SharedProgramStreamDoc(
+        int descendant2Width = 500,
+        IReadOnlyList<int>? wrapper2Codes = null,
+        IReadOnlyList<int>? wrapper1Codes = null)
+    {
+        PdfDocument doc = SharedDescriptorDoc(
+            descendant2Width: descendant2Width,
+            wrapper2Codes: wrapper2Codes,
+            wrapper1Codes: wrapper1Codes);
+
+        doc.AddObject(17, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+SharedDescriptor"),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+
+        var descendant2 = (PdfDictionary)doc.GetObject(14)!;
+        descendant2[N("FontDescriptor")] = Ref(17);
+        return doc;
+    }
+
+    /// <summary>
     /// Review round 2 (Task 4 fix wave), finding 1, controller ruling: a SIMPLE TrueType font
     /// (object 30) sharing the SAME <c>/FontDescriptor</c> (2) — and so the same <c>/FontFile2</c>
     /// (3) — as a COMPOSITE notdef seed's descendant (object 4). A simple font can never be

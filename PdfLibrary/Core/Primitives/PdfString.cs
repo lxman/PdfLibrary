@@ -26,6 +26,13 @@ internal sealed class PdfString(
     /// </summary>
     public HexStringFacts? HexFacts { get; } = hexFacts;
 
+    /// <summary>
+    /// The source/synthesis format this string will use when serialized. This is presentation state,
+    /// not string-value identity, so it deliberately remains outside equality and hashing alongside
+    /// <see cref="HexFacts"/>.
+    /// </summary>
+    public PdfStringFormat Format => _format;
+
     public override PdfObjectType Type => PdfObjectType.String;
 
     /// <summary>

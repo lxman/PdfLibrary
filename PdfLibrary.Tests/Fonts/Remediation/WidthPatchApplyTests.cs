@@ -5,6 +5,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Fonts;
+using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Fonts.Remediation;
 using PdfLibrary.Structure;
 using PdfLibrary.Tests.Fonts.Embedded;
@@ -96,5 +97,48 @@ public sealed class WidthPatchApplyTests
         ms.Position = 0;
         using PdfDocument reloaded = PdfDocument.Load(ms);
         Assert.Empty(RuleFindings(reloaded)); // no font-program finding of ANY sub-clause
+    }
+
+    /// <summary>
+    /// Tracker issue 45 was filed on the premise that two descriptors sharing one input
+    /// <c>/FontFile2</c> stream could clobber each other's repairs. The write operation has always
+    /// registered a new stream and changed only the selected descriptor's reference, so the opposite
+    /// is true: the descriptors can safely diverge when their declared advances differ. Grouping them
+    /// as one physical holder would turn these two independently valid repairs into a false
+    /// merge-width-conflict decline.
+    /// </summary>
+    [Fact]
+    public void Two_descriptors_sharing_the_input_stream_apply_independent_width_patches_without_clobbering()
+    {
+        PdfDocument doc = ReplaceProgramFixtures.SharedProgramStreamDoc(
+            descendant2Width: 700, wrapper1Codes: [0x41], wrapper2Codes: [0x43]);
+        FontRemediationProposal proposal = ReplaceProgramFixtures.Planner()
+            .Propose(doc, [("font-program", 1), ("font-program", 7)]);
+        PatchWidthsProposal[] patches = proposal.Fonts.OfType<PatchWidthsProposal>().ToArray();
+        Assert.Equal(2, patches.Length);
+        Assert.Empty(proposal.Fonts.OfType<DeclineProposal>());
+
+        using PdfDocumentEditor editor = doc.Edit();
+        foreach (PatchWidthsProposal patch in patches)
+            editor.ReplaceProgramBytes(patch.Font, patch.PatchedProgram);
+
+        var ms = new MemoryStream();
+        editor.Save(ms);
+        ms.Position = 0;
+        using PdfDocument reloaded = PdfDocument.Load(ms);
+
+        var descendant4 = Assert.IsType<PdfDictionary>(reloaded.GetObject(4));
+        var descendant14 = Assert.IsType<PdfDictionary>(reloaded.GetObject(14));
+        var descriptor2 = Assert.IsType<PdfDictionary>(Resolve(reloaded, descendant4.Get("FontDescriptor")));
+        var descriptor17 = Assert.IsType<PdfDictionary>(Resolve(reloaded, descendant14.Get("FontDescriptor")));
+        var programRef2 = Assert.IsType<PdfIndirectReference>(descriptor2.Get("FontFile2"));
+        var programRef17 = Assert.IsType<PdfIndirectReference>(descriptor17.Get("FontFile2"));
+        Assert.NotEqual(programRef2.ObjectNumber, programRef17.ObjectNumber);
+
+        var program2 = Assert.IsType<PdfStream>(Resolve(reloaded, programRef2));
+        var program17 = Assert.IsType<PdfStream>(Resolve(reloaded, programRef17));
+        Assert.Equal(500, new EmbeddedFontMetrics(program2.GetDecodedData(reloaded.Decryptor)).GetAdvanceWidth(1));
+        Assert.Equal(700, new EmbeddedFontMetrics(program17.GetDecodedData(reloaded.Decryptor)).GetAdvanceWidth(1));
+        Assert.Empty(RuleFindings(reloaded));
     }
 }
