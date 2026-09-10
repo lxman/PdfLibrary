@@ -19,6 +19,7 @@ internal static class MinimalCff
     private static readonly byte[] FontNameBytes = "TestFont"u8.ToArray();
 
     private const byte OpCharset = 15;
+    private const byte OpEncoding = 16;
     private const byte OpCharStrings = 17;
     private const byte OpPrivate = 18;
     private const byte OpEscape = 0x0C;
@@ -36,22 +37,31 @@ internal static class MinimalCff
     /// the operator at it, overriding <paramref name="charsetOperand"/>.
     /// </summary>
     public static byte[] Build(int? charsetOperand, int numGlyphs, ushort[]? customCharsetSids = null,
-        List<byte[]>? customCharStrings = null)
+        List<byte[]>? customCharStrings = null, byte[]? customEncodingTable = null,
+        int encodingPaddingLength = 0)
     {
+        if (encodingPaddingLength < 0)
+            throw new ArgumentOutOfRangeException(nameof(encodingPaddingLength));
+
         List<byte[]> glyphs = customCharStrings ?? EndCharGlyphs(numGlyphs);
         int nameIndexSize = IndexSize([FontNameBytes], 1);
         int topDictLen = (charsetOperand is null && customCharsetSids is null ? 0 : 6) // charset
+                         + (customEncodingTable is null ? 0 : 6)                       // Encoding
                          + 6                                                          // CharStrings
                          + 11;                                                        // Private
         int charStringsSize = IndexSize(glyphs, 2);
         byte[] charsetTable = BuildCharsetTable(customCharsetSids);
 
-        // Layout: header | name | topDict | string | globalSubr | pad | charset | charStrings | private
-        int charsetOffset = 4 + nameIndexSize + IndexSize([new byte[topDictLen]], 1) + 2 + 2 + 1;
+        // Layout: header | name | topDict | string | globalSubr | pad | optional extra padding |
+        // optional custom encoding | charset | charStrings | private.
+        int postIndexOffset = 4 + nameIndexSize + IndexSize([new byte[topDictLen]], 1) + 2 + 2;
+        int encodingOffset = postIndexOffset + 1 + encodingPaddingLength;
+        int charsetOffset = encodingOffset + (customEncodingTable?.Length ?? 0);
         int charStringsOffset = charsetOffset + charsetTable.Length;
         int privateOffset = charStringsOffset + charStringsSize;
 
         var top = new List<byte>();
+        if (customEncodingTable is not null) AppendNumberOp(top, encodingOffset, OpEncoding);
         if (customCharsetSids is not null) AppendNumberOp(top, charsetOffset, OpCharset);
         else if (charsetOperand is not null) AppendNumberOp(top, charsetOperand.Value, OpCharset);
         AppendNumberOp(top, charStringsOffset, OpCharStrings);
@@ -62,6 +72,13 @@ internal static class MinimalCff
 
         var data = new List<byte>();
         AppendPreamble(data, top);
+        data.AddRange(Enumerable.Repeat((byte)0xFE, encodingPaddingLength));
+        if (customEncodingTable is not null)
+        {
+            Verify(encodingOffset == data.Count,
+                "Encoding landed somewhere other than the offset written into the Top DICT");
+            data.AddRange(customEncodingTable);
+        }
         data.AddRange(charsetTable);
         AppendIndex(data, glyphs, offSize: 2);
         data.AddRange(PrivateDict);

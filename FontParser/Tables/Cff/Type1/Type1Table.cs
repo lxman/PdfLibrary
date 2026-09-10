@@ -239,13 +239,27 @@ namespace FontParser.Tables.Cff.Type1
             var globalSubrIndex = new Type1Index(reader);
             List<List<byte>> globalSubroutines = globalSubrIndex.Data;
 
-            byte encodingFormat = reader.ReadByte();
-            Encoding = encodingFormat switch
+            // The Encoding operator is OPTIONAL. Values 0 and 1 select the predefined Standard and
+            // Expert encodings; values greater than 1 are absolute offsets to a custom Encoding table
+            // (CFF spec, Technical Note #5176 Table 9 and section 12). The old parser instead read the
+            // byte immediately following Global Subr INDEX, so unrelated padding or another table could
+            // silently become a plausible format-0/1 encoding.
+            CffDictEntry? encodingEntry = _topDictOperatorEntries.FirstOrDefault(e => e.Name == "Encoding");
+            long encodingOffset = encodingEntry is null ? 0L : Convert.ToInt64(encodingEntry.Operand);
+            if (encodingOffset > 1)
             {
-                0 => new Encoding0(reader),
-                1 => new Encoding1(reader),
-                _ => Encoding
-            };
+                reader.Seek(encodingOffset);
+                byte encodingFormat = reader.ReadByte();
+                // Supplemental encodings (high bit set) need their SID records resolved through the
+                // charset and are not represented by the current IEncoding model. Keep declining that
+                // unsupported shape rather than returning a deceptively partial base mapping.
+                Encoding = encodingFormat switch
+                {
+                    0 => new Encoding0(reader),
+                    1 => new Encoding1(reader),
+                    _ => Encoding
+                };
+            }
 
             reader.Seek(Convert.ToInt64(_topDictOperatorEntries.First(e => e.Name == "CharStrings").Operand));
 
