@@ -88,6 +88,24 @@ internal static class ZeroAdvanceSfntFixture
         return b.ToArray();
     }
 
+    /// <summary>A lone (3,0) Windows-Symbol format-6 subtable mapping the PDF code 10 through
+    /// the conventional U+F000 private-use offset (U+F00A → gid 1).</summary>
+    public static byte[] CmapWindowsSymbolFormat6()
+    {
+        var b = new List<byte>();
+        U16(b, 0);                     // table version
+        U16(b, 1);                     // numTables
+        U16(b, 3); U16(b, 0);          // platform 3 (Windows), encoding 0 (Symbol)
+        U32(b, 12);                    // subtable offset
+        U16(b, 6);                     // format 6
+        U16(b, 12);                    // length (5 × u16 header + 1 × u16 entry)
+        U16(b, 0);                     // language
+        U16(b, 0xF00A);                // firstCode = U+F000 + PDF code 10
+        U16(b, 1);                     // entryCount
+        U16(b, 1);                     // glyphIndexArray = [gid 1]
+        return b.ToArray();
+    }
+
     public static byte[] FontBytes(ushort gid1Advance = 0, ushort macStyle = 0) => MinimalSfnt.Build(
         ("head", Head(macStyle)),
         ("maxp", Maxp(2)),
@@ -95,6 +113,14 @@ internal static class ZeroAdvanceSfntFixture
         ("hmtx", Hmtx(gid1Advance)),
         ("cmap", CmapMacFormat6()),
         ("glyf", new byte[4]));        // content unused; presence required for IsValid
+
+    public static byte[] SymbolFontBytes(ushort gid1Advance = 0) => MinimalSfnt.Build(
+        ("head", Head()),
+        ("maxp", Maxp(2)),
+        ("hhea", Hhea(2)),
+        ("hmtx", Hmtx(gid1Advance)),
+        ("cmap", CmapWindowsSymbolFormat6()),
+        ("glyf", new byte[4]));
 
     /// <summary>hmtx for a font whose tail glyphs share gid 0's long metric (numberOfHMetrics=1):
     /// gid 0 is the sole long metric (advance <paramref name="gid0Advance"/>, lsb 0); gids

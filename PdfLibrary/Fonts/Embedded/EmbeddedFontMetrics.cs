@@ -227,6 +227,36 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Resolves an 8-bit PDF character code through a Windows-Symbol (3,0) cmap only. Symbol fonts
+    /// conventionally store those codes in the U+F000..U+F0FF private-use range, although low-byte
+    /// entries also occur, so the exact code is tried first and the U+F000 form second. No Unicode
+    /// or non-symbol cmap participates: returning a glyph from either would make a width comparison
+    /// authoritative against the wrong program glyph.
+    /// </summary>
+    public ushort GetGlyphIdBySymbolCode(ushort charCode)
+    {
+        if (_cmapTable is null || charCode > 0xFF)
+            return 0;
+
+        foreach (CmapEncoding encoding in _cmapTable.Encodings)
+        {
+            if (encoding.Encoding is not
+                { PlatformId: PlatformId.Windows, WindowsEncoding: WindowsEncodingId.UnicodeCsm })
+                continue;
+
+            ushort glyphId = encoding.SubTable.GetGlyphId(charCode);
+            if (glyphId != 0)
+                return glyphId;
+
+            glyphId = encoding.SubTable.GetGlyphId((ushort)(0xF000 | charCode));
+            if (glyphId != 0)
+                return glyphId;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
     /// True when the program carries a Unicode-capable cmap subtable (a (3,1) Windows-UnicodeBMP,
     /// (3,10) Windows-UnicodeUCS4, or any (0,x) Unicode-platform record) — the subtables a code→Unicode→glyph
     /// lookup can trust. Distinct from <see cref="HasSymbolCmapEncoding"/> (the (3,0) Symbol record, which is

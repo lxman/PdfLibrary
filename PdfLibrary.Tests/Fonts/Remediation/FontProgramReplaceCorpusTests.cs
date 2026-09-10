@@ -350,15 +350,14 @@ public class FontProgramReplaceCorpusTests
     /// finding). MEASURED (2026-08-17, corrected — the ORIGINAL doc comment here assumed the
     /// "missing glyph" v1-scope reason without ever checking): this document's font-program findings
     /// total FOUR objects (8, 10, 23, 40), and object 23 carries BOTH the pinned <c>.notdef</c>
-    /// finding AND a width (6.2.11.5) finding — <c>ProposeWidthPatch</c> only reaches the
-    /// v1-scope "missing glyph" decline when <c>!hasWidth</c>; because object 23 ALSO has a width
-    /// finding, it instead runs the ordinary width-conflict check and declines "two character codes
-    /// share one glyph but declare different widths" — a genuine, PRE-EXISTING condition entirely
-    /// outside the fix-round-1 retry's reach (composite-kind gate, same as the CFF doc above).
-    /// Still entirely a DECLINE for every object; still zero replacements.
+    /// finding and used to carry a width (6.2.11.5) false positive. Issue 30 proved the apparent
+    /// conflict came from treating the glyph name's Unicode as another raw code in the font's lone
+    /// (3,0) Symbol cmap. Resolving through that cmap's authoritative code mapping clears the width
+    /// finding, so the object now takes the deterministic v1-scope missing-glyph decline. It remains
+    /// a DECLINE for every object with zero replacements.
     /// </summary>
     [Fact]
-    public void Simple_tt_document_declines_via_a_preexisting_width_conflict()
+    public void Simple_symbol_tt_document_declines_only_for_the_missing_glyph()
     {
         string? root = CcMainCorpus();
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
@@ -371,7 +370,7 @@ public class FontProgramReplaceCorpusTests
         Assert.Empty(replacements);
         Assert.Equal(total, declines.Count);
         DeclineProposal decline23 = Assert.Single(declines, d => d.Font.ObjectNumber == 23);
-        Assert.Contains("share one glyph but declare different widths", decline23.Reason);
+        Assert.Contains("missing glyph", decline23.Reason);
     }
 
     /// <summary>

@@ -26,9 +26,11 @@ public class ProgramWidthResolverTests
     /// font, /FirstChar 10 /Widths [507], code 10 shown once in a Tj hex string, with gid 1's
     /// hmtx advance parameterized so the same shape covers both the zero-advance skip and an
     /// ordinary measurable mismatch.</summary>
-    private static PdfDocument Doc(ushort gid1Advance)
+    private static PdfDocument Doc(ushort gid1Advance, bool symbolic = false)
     {
-        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance);
+        byte[] font = symbolic
+            ? ZeroAdvanceSfntFixture.SymbolFontBytes(gid1Advance)
+            : ZeroAdvanceSfntFixture.FontBytes(gid1Advance);
         var doc = new PdfDocument();
         doc.AddObject(3, 0, new PdfStream(
             new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
@@ -36,7 +38,7 @@ public class ProgramWidthResolverTests
         {
             [N("Type")] = N("FontDescriptor"),
             [N("FontName")] = N("ABCDEE+ZeroAdvance"),
-            [N("Flags")] = new PdfInteger(32),     // non-symbolic
+            [N("Flags")] = new PdfInteger(symbolic ? 4 : 32),
             [N("FontFile2")] = Ref(3),
         });
         doc.AddObject(1, 0, new PdfDictionary
@@ -119,5 +121,65 @@ public class ProgramWidthResolverTests
         Assert.Equal(1, w.Gid);
         Assert.Equal(507, w.Declared);
         Assert.Equal(450, w.Program); // upm 1000 → no scaling distortion
+    }
+
+    [Fact]
+    public void A_used_code_below_first_char_uses_the_default_missing_width()
+    {
+        // Issue 29's minimal shape: the content shows code 10, but /FirstChar starts at 20 so the
+        // /Widths array has no entry for it. The descriptor has no /MissingWidth, whose specified
+        // default is 0; the cmap still maps code 10 to GID 1 with a real 450-unit advance.
+        PdfDocument doc = Doc(gid1Advance: 450);
+        ((PdfDictionary)doc.Objects[1])[N("FirstChar")] = new PdfInteger(20);
+
+        var context = new ConformanceContext(doc, ConformanceProfile.PdfA2b);
+        UsedFontCodes usage = context.UsedTextGlyphs.Single();
+        EmbeddedFontMetrics metrics = usage.Font.GetEmbeddedMetrics()!;
+        var widths = (PdfArray)context.Resolve(usage.Font.FontDictionary.Get("Widths"))!;
+
+        WidthComparison comparison = Assert.Single(
+            ProgramWidthResolver.Simple(usage.Font, metrics, widths, [10], isTrueType: true));
+        Assert.Equal(10, comparison.Code);
+        Assert.Equal(1, comparison.Gid);
+        Assert.Equal(0, comparison.Declared);
+        Assert.Equal(450, comparison.Program);
+    }
+
+    [Fact]
+    public void An_out_of_range_code_uses_an_explicit_descriptor_missing_width()
+    {
+        PdfDocument doc = Doc(gid1Advance: 450);
+        ((PdfDictionary)doc.Objects[1])[N("FirstChar")] = new PdfInteger(20);
+        ((PdfDictionary)doc.Objects[2])[N("MissingWidth")] = new PdfInteger(333);
+
+        var context = new ConformanceContext(doc, ConformanceProfile.PdfA2b);
+        UsedFontCodes usage = context.UsedTextGlyphs.Single();
+        EmbeddedFontMetrics metrics = usage.Font.GetEmbeddedMetrics()!;
+        var widths = (PdfArray)context.Resolve(usage.Font.FontDictionary.Get("Widths"))!;
+
+        WidthComparison comparison = Assert.Single(
+            ProgramWidthResolver.Simple(usage.Font, metrics, widths, [10], isTrueType: true));
+        Assert.Equal(333, comparison.Declared);
+        Assert.Equal(450, comparison.Program);
+    }
+
+    [Fact]
+    public void A_symbolic_truetype_width_uses_its_windows_symbol_cmap()
+    {
+        // Issue 30: Windows-Symbol cmaps conventionally key an 8-bit PDF code in U+F000..U+F0FF.
+        // Name/Unicode and raw-code lookup both miss code 10 here; U+F00A is the authoritative gid.
+        PdfDocument doc = Doc(gid1Advance: 450, symbolic: true);
+        var context = new ConformanceContext(doc, ConformanceProfile.PdfA2b);
+        UsedFontCodes usage = context.UsedTextGlyphs.Single();
+        EmbeddedFontMetrics metrics = usage.Font.GetEmbeddedMetrics()!;
+        var widths = (PdfArray)context.Resolve(usage.Font.FontDictionary.Get("Widths"))!;
+
+        Assert.True(metrics.HasSymbolCmapEncoding());
+        Assert.Equal(0, metrics.GetGlyphId(10));
+        WidthComparison comparison = Assert.Single(
+            ProgramWidthResolver.Simple(usage.Font, metrics, widths, [10], isTrueType: true));
+        Assert.Equal(1, comparison.Gid);
+        Assert.Equal(507, comparison.Declared);
+        Assert.Equal(450, comparison.Program);
     }
 }
