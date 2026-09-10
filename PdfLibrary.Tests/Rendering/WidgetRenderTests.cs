@@ -110,11 +110,19 @@ public class WidgetRenderTests
     /// <summary>
     /// Builds the PDF by writing bytes directly so offsets are exact.
     /// </summary>
-    private static byte[] BuildWidgetPdfPrecise()
+    private static byte[] BuildWidgetPdfPrecise(
+        string? appearanceContent = null,
+        string? rect = null,
+        string? bbox = null,
+        string? matrix = null)
     {
-        string apContent = $"q 1 0 0 rg 0 0 {(int)WidgetW} {(int)WidgetH} re f Q";
+        string apContent = appearanceContent
+                           ?? $"q 1 0 0 rg 0 0 {(int)WidgetW} {(int)WidgetH} re f Q";
         byte[] apBytes = System.Text.Encoding.Latin1.GetBytes(apContent);
         int apLength = apBytes.Length;
+        string rectValue = rect ?? $"{(int)WidgetLlx} {(int)WidgetLly} {(int)WidgetUrx} {(int)WidgetUry}";
+        string bboxValue = bbox ?? $"0 0 {(int)WidgetW} {(int)WidgetH}";
+        string matrixEntry = matrix is null ? "" : $" /Matrix [{matrix}]";
 
         using var ms = new MemoryStream();
         using var w = new StreamWriter(ms, System.Text.Encoding.Latin1, leaveOpen: true);
@@ -145,12 +153,12 @@ public class WidgetRenderTests
         // 4 0 obj  Widget annotation
         w.Flush();
         offsets[4] = (int)ms.Position;
-        Write($"4 0 obj\r\n<< /Type /Annot /Subtype /Widget /Rect [{(int)WidgetLlx} {(int)WidgetLly} {(int)WidgetUrx} {(int)WidgetUry}] /AP << /N 5 0 R >> >>\r\nendobj\r\n");
+        Write($"4 0 obj\r\n<< /Type /Annot /Subtype /Widget /Rect [{rectValue}] /AP << /N 5 0 R >> >>\r\nendobj\r\n");
 
         // 5 0 obj  Appearance stream
         w.Flush();
         offsets[5] = (int)ms.Position;
-        Write($"5 0 obj\r\n<< /Type /XObject /Subtype /Form /BBox [0 0 {(int)WidgetW} {(int)WidgetH}] /Length {apLength} >>\r\nstream\r\n");
+        Write($"5 0 obj\r\n<< /Type /XObject /Subtype /Form /BBox [{bboxValue}]{matrixEntry} /Length {apLength} >>\r\nstream\r\n");
         w.Flush();
         ms.Write(apBytes, 0, apBytes.Length);
         Write("\r\nendstream\r\nendobj\r\n");
@@ -230,5 +238,32 @@ public class WidgetRenderTests
             $"Widget rect (bitmap coords): x=[{bx0},{bx1}) y=[{by0},{by1}). " +
             $"Image size: {bitmap.Width}×{bitmap.Height}. " +
             $"Expected red fill from appearance stream 'q 1 0 0 rg 0 0 200 100 re f Q'.");
+    }
+
+    [Fact]
+    public void WidgetAnnotation_AppliesAppearanceMatrixBeforeFittingBBoxToRect()
+    {
+        // The appearance paints the left half of its 100x50 BBox. Its /Matrix rotates that box
+        // counter-clockwise into [50,0]-[100,100]. The §12.5.5 fit to the 200x100 annotation
+        // rectangle therefore places the red half across the BOTTOM of /Rect. The former BBox-only
+        // shortcut instead painted the LEFT half, so the two probes below discriminate the paths.
+        byte[] pdfBytes = BuildWidgetPdfPrecise(
+            appearanceContent: "q 1 0 0 rg 0 0 50 50 re f Q",
+            rect: "200 300 400 400",
+            bbox: "0 0 100 50",
+            matrix: "0 1 -1 0 100 0");
+
+        using var ms = new MemoryStream(pdfBytes);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        using SKImage image = doc.GetPage(0)!.RenderTo().WithScale(1.0).ToImage();
+        using SKBitmap bitmap = SKBitmap.FromImage(image);
+
+        SKColor bottomRight = bitmap.GetPixel(350, (int)PageHeight - 325);
+        SKColor topLeft = bitmap.GetPixel(250, (int)PageHeight - 375);
+
+        Assert.True(bottomRight.Red > 200 && bottomRight.Green < 50 && bottomRight.Blue < 50,
+            $"Expected the matrix-rotated appearance at bottom-right, got {bottomRight}.");
+        Assert.False(topLeft.Red > 200 && topLeft.Green < 50 && topLeft.Blue < 50,
+            $"The old BBox-only placement paints top-left red; §12.5.5 placement must not ({topLeft}).");
     }
 }

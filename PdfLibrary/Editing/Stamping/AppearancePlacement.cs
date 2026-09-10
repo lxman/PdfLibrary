@@ -3,10 +3,8 @@ namespace PdfLibrary.Editing.Stamping;
 /// <summary>
 /// ISO 32000-1 §12.5.5, "Algorithm: Appearance streams" — computes the matrix AA that maps an
 /// appearance stream's own coordinate system into an annotation's /Rect in default user space.
-/// This is distinct from (and more general than) <c>FormFlattener</c>'s widget-placement one-liner,
-/// which is a pure translation to /Rect's lower-left corner and assumes identity /Matrix, a /BBox
-/// whose origin is (0,0), and a /BBox whose size equals /Rect's. Those assumptions do not hold for
-/// annotations in general, so this type implements the full algorithm instead of reusing that one.
+/// Shared by annotation rendering, annotation-type baking, and form flattening so all three paths
+/// use the same full placement algorithm rather than compatible-looking local approximations.
 /// </summary>
 internal static class AppearancePlacement
 {

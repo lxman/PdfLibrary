@@ -32,9 +32,11 @@ internal sealed class AnnotationFlagsRule : IConformanceRule
             bool isPopup = context.ResolveName(annot.Get("Subtype")) == "Popup";
             PdfObject? f = context.Resolve(annot.Get("F"));
 
-            // 6.3.2-t1: a non-Popup annotation must have the /F entry — any present value counts, so a
-            // (malformed) non-integer /F still satisfies presence and must not be reported as missing.
-            if (!isPopup && f is null)
+            // 6.3.2-t1: veraPDF exposes /F through its numeric model property, so a malformed,
+            // non-numeric raw value is indistinguishable from an absent entry. Match that verdict:
+            // numeric integers and reals count as present; names, strings, arrays, etc. do not.
+            bool hasNumericFlags = f is PdfInteger or PdfReal;
+            if (!isPopup && !hasNumericFlags)
             {
                 yield return Error(context, annot, "A non-Popup annotation is missing the required /F flags entry.");
                 continue;

@@ -7,6 +7,7 @@ using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
+using PdfLibrary.Editing.Stamping;
 using PdfLibrary.Fixups;
 using PdfLibrary.Fonts;
 using PdfLibrary.Structure;
@@ -242,20 +243,14 @@ internal class PdfRenderer : PdfContentProcessor
             if (!annotDict.TryGetValue(new PdfName("Rect"), out PdfObject rectObj))
                 continue;
 
-            PdfArray? rectArray = rectObj switch
-            {
-                PdfArray arr => arr,
-                PdfIndirectReference rRef => _document?.GetObject(rRef.ObjectNumber) as PdfArray,
-                _ => null
-            };
-
-            if (rectArray is null || rectArray.Count < 4)
+            double[]? rect = ReadAnnotationNumberArray(rectObj, 4);
+            if (rect is null)
                 continue;
 
-            double llx = GetAnnotNumber(rectArray[0]);
-            double lly = GetAnnotNumber(rectArray[1]);
-            double urx = GetAnnotNumber(rectArray[2]);
-            double ury = GetAnnotNumber(rectArray[3]);
+            double llx = Math.Min(rect[0], rect[2]);
+            double lly = Math.Min(rect[1], rect[3]);
+            double urx = Math.Max(rect[0], rect[2]);
+            double ury = Math.Max(rect[1], rect[3]);
 
             // Get appearance dictionary
             if (!annotDict.TryGetValue(new PdfName("AP"), out PdfObject apObj))
@@ -287,37 +282,22 @@ internal class PdfRenderer : PdfContentProcessor
             if (appearanceStream is null)
                 continue;
 
-            // Get appearance stream's BBox
-            PdfArray? bbox = null;
-            if (appearanceStream.Dictionary.TryGetValue(new PdfName("BBox"), out PdfObject bboxObj))
-            {
-                bbox = bboxObj switch
-                {
-                    PdfArray arr => arr,
-                    PdfIndirectReference bRef => _document?.GetObject(bRef.ObjectNumber) as PdfArray,
-                    _ => null
-                };
-            }
-
-            double bboxLlx = 0, bboxLly = 0, bboxUrx = 1, bboxUry = 1;
-            if (bbox is { Count: >= 4 })
-            {
-                bboxLlx = GetAnnotNumber(bbox[0]);
-                bboxLly = GetAnnotNumber(bbox[1]);
-                bboxUrx = GetAnnotNumber(bbox[2]);
-                bboxUry = GetAnnotNumber(bbox[3]);
-            }
-
-            // Calculate transformation matrix to map BBox to Rect
-            double rectWidth = urx - llx;
-            double rectHeight = ury - lly;
-            double bboxWidth = bboxUrx - bboxLlx;
-            double bboxHeight = bboxUry - bboxLly;
-
-            double sx = bboxWidth != 0 ? rectWidth / bboxWidth : 1;
-            double sy = bboxHeight != 0 ? rectHeight / bboxHeight : 1;
-            double tx = llx - bboxLlx * sx;
-            double ty = lly - bboxLly * sy;
+            // ISO 32000-1 §12.5.5: /BBox is first transformed by the appearance /Matrix; the
+            // smallest upright rectangle containing that quadrilateral is then fitted to /Rect.
+            // /Matrix defaults to identity only when absent. Malformed or degenerate geometry has no
+            // meaningful placement, so leave the annotation visible-but-unrendered rather than draw
+            // its appearance at a guessed transform.
+            double[]? bbox = ReadAnnotationNumberArray(
+                appearanceStream.Dictionary.Get(new PdfName("BBox")), 4);
+            PdfObject? matrixRaw = appearanceStream.Dictionary.Get(new PdfName("Matrix"));
+            double[]? matrix = matrixRaw is null
+                ? [1, 0, 0, 1, 0, 0]
+                : ReadAnnotationNumberArray(matrixRaw, 6);
+            double[]? aa = bbox is not null && matrix is not null
+                ? AppearancePlacement.ComputeAA(bbox, matrix, rect)
+                : null;
+            if (aa is null)
+                continue;
 
             PdfLogger.Log(LogCategory.Graphics, $"Rendering annotation appearance at ({llx:F1}, {lly:F1}) - ({urx:F1}, {ury:F1})");
 
@@ -373,8 +353,9 @@ internal class PdfRenderer : PdfContentProcessor
             // annotation correctly placed and every later one drifting off-page. Snapshot + restore it.
             System.Numerics.Matrix3x2 savedAnnotationCtm = CurrentState.Ctm;
 
-            // Apply transformation: scale and translate
-            CurrentState.ConcatenateMatrix((float)sx, 0, 0, (float)sy, (float)tx, (float)ty);
+            // Apply the complete appearance-to-annotation placement matrix.
+            CurrentState.ConcatenateMatrix(
+                (float)aa[0], (float)aa[1], (float)aa[2], (float)aa[3], (float)aa[4], (float)aa[5]);
             // Push the updated CTM to the target so TEXT inside the appearance is positioned too.
             // PathRenderer recomputes device coords from the graphics state independently, but the
             // text path relies on the canvas matrix set by ApplyCtm — without this, text-showing
@@ -441,14 +422,29 @@ internal class PdfRenderer : PdfContentProcessor
         return null;
     }
 
-    private static double GetAnnotNumber(PdfObject obj)
+    private double[]? ReadAnnotationNumberArray(PdfObject? raw, int count)
     {
-        return obj switch
+        PdfObject? resolved = raw is PdfIndirectReference reference
+            ? _document?.GetObject(reference.ObjectNumber)
+            : raw;
+        if (resolved is not PdfArray array || array.Count < count) return null;
+
+        var result = new double[count];
+        for (var i = 0; i < count; i++)
         {
-            PdfInteger i => i.Value,
-            PdfReal r => r.Value,
-            _ => 0
-        };
+            PdfObject? item = array[i] is PdfIndirectReference itemReference
+                ? _document?.GetObject(itemReference.ObjectNumber)
+                : array[i];
+            result[i] = item switch
+            {
+                PdfInteger integer => integer.Value,
+                PdfReal real => real.Value,
+                _ => double.NaN
+            };
+            if (!double.IsFinite(result[i])) return null;
+        }
+
+        return result;
     }
 
     // ==================== Graphics State ====================

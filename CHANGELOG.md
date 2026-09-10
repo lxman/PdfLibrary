@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+- PDF/A annotation-flags preflight now reports a non-Popup annotation whose `/F` value is
+  non-numeric, matching veraPDF's 6.3.2 test-1 verdict instead of treating any raw value as present.
+- Annotation appearances now use the complete ISO 32000-1 §12.5.5 placement algorithm in both
+  interactive rendering and form flattening, including the appearance stream's `/Matrix`, transformed
+  `/BBox`, and non-normalized annotation `/Rect`. A widget whose geometry cannot be placed is retained
+  with its AcroForm field instead of being baked at a guessed location or orphaned.
+
 ## [2.6.2] - 2026-09-09
 
 ### Fixed

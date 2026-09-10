@@ -122,6 +122,22 @@ public class FlattenTests
         return null;
     }
 
+    private static PdfStream SelectedAppearance(PdfDocument doc, PdfButtonField field)
+    {
+        return SelectedAppearance(doc, Assert.Single(field.WidgetDicts));
+    }
+
+    private static PdfStream SelectedAppearance(PdfDocument doc, PdfDictionary widget)
+    {
+        PdfDictionary ap = Assert.IsType<PdfDictionary>(
+            FormFieldTree.Resolve(doc, widget.Get(new PdfName("AP"))));
+        PdfDictionary states = Assert.IsType<PdfDictionary>(
+            FormFieldTree.Resolve(doc, ap.Get(new PdfName("N"))));
+        PdfName state = Assert.IsType<PdfName>(widget.Get(new PdfName("AS")));
+        return Assert.IsType<PdfStream>(
+            FormFieldTree.Resolve(doc, states.Get(new PdfName(state.Value))));
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -269,6 +285,117 @@ public class FlattenTests
             byte[] flatBytes = File.ReadAllBytes(outPath);
             string contents = DecodePageContents(flatBytes);
             Assert.Contains("Do", contents);
+        }
+        finally
+        {
+            File.Delete(outPath);
+        }
+    }
+
+    [Fact]
+    public void FlattenByName_UsesAppearanceMatrixAndBBoxToBuildInvocation()
+    {
+        byte[] originalPdf = FormTestDocs.WithCheckbox("box", checkedOn: true);
+        string outPath = Path.GetTempFileName();
+        try
+        {
+            using (PdfDocument doc = PdfDocument.Load(new MemoryStream(originalPdf)))
+            {
+                PdfDocumentEditor edit = doc.Edit();
+                var field = Assert.IsType<PdfButtonField>(edit.Forms["box"]);
+                field.Check(); // materializes the builder fixture's normal appearance stream
+                PdfDictionary widget = Assert.Single(field.WidgetDicts);
+                widget[new PdfName("Rect")] = new PdfArray(
+                    new PdfInteger(200), new PdfInteger(300), new PdfInteger(400), new PdfInteger(400));
+
+                PdfStream appearance = SelectedAppearance(doc, field);
+                appearance.Dictionary[new PdfName("BBox")] = new PdfArray(
+                    new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(50));
+                appearance.Dictionary[new PdfName("Matrix")] = new PdfArray(
+                    new PdfInteger(0), new PdfInteger(1), new PdfInteger(-1),
+                    new PdfInteger(0), new PdfInteger(100), new PdfInteger(0));
+
+                edit.Forms.Flatten("box");
+                edit.Save(outPath);
+            }
+
+            byte[] flatBytes = File.ReadAllBytes(outPath);
+            string contents = DecodePageContents(flatBytes);
+            Assert.Contains("q 0 1 -4 0 400 300 cm /", contents);
+            Assert.Equal(0, CountWidgetsForField(flatBytes, "box"));
+            Assert.False(HasAcroFormWithFields(flatBytes));
+        }
+        finally
+        {
+            File.Delete(outPath);
+        }
+    }
+
+
+    [Fact]
+    public void FlattenByName_RetainsWidgetAndFieldWhenAppearancePlacementIsDegenerate()
+    {
+        byte[] originalPdf = FormTestDocs.WithCheckbox("box", checkedOn: true);
+        string outPath = Path.GetTempFileName();
+        try
+        {
+            using (PdfDocument doc = PdfDocument.Load(new MemoryStream(originalPdf)))
+            {
+                PdfDocumentEditor edit = doc.Edit();
+                var field = Assert.IsType<PdfButtonField>(edit.Forms["box"]);
+                field.Check();
+                PdfStream appearance = SelectedAppearance(doc, field);
+                appearance.Dictionary[new PdfName("BBox")] = new PdfArray(
+                    new PdfInteger(0), new PdfInteger(0), new PdfInteger(0), new PdfInteger(50));
+
+                edit.Forms.Flatten("box");
+                edit.Save(outPath);
+            }
+
+            byte[] saved = File.ReadAllBytes(outPath);
+            Assert.Equal(1, CountWidgetsForField(saved, "box"));
+            Assert.True(HasAcroFormWithFields(saved));
+            Assert.DoesNotContain(" Do ", DecodePageContents(saved));
+        }
+        finally
+        {
+            File.Delete(outPath);
+        }
+    }
+
+    [Fact]
+    public void FlattenByName_DoesNotPartiallyFlattenMultiWidgetFieldWhenOnePlacementIsDegenerate()
+    {
+        byte[] originalPdf = PdfDocumentBuilder.Create()
+            .WithAcroForm(_ => { })
+            .AddPage(p =>
+            {
+                p.AddRadioGroup("choice")
+                    .AddOptionInches("A", 1.0, 9.0)
+                    .AddOptionInches("B", 1.0, 8.5)
+                    .Select("A");
+            })
+            .ToByteArray();
+        string outPath = Path.GetTempFileName();
+        try
+        {
+            using (PdfDocument doc = PdfDocument.Load(new MemoryStream(originalPdf)))
+            {
+                PdfDocumentEditor edit = doc.Edit();
+                var field = Assert.IsType<PdfButtonField>(edit.Forms["choice"]);
+                Assert.Equal(2, field.WidgetDicts.Count);
+                PdfStream secondAppearance = SelectedAppearance(doc, field.WidgetDicts[1]);
+                secondAppearance.Dictionary[new PdfName("BBox")] = new PdfArray(
+                    new PdfInteger(0), new PdfInteger(0), new PdfInteger(0), new PdfInteger(14));
+
+                edit.Forms.Flatten("choice");
+                edit.Save(outPath);
+            }
+
+            byte[] saved = File.ReadAllBytes(outPath);
+            Assert.Equal(2, CountWidgetsForField(saved, "choice"));
+            Assert.True(HasAcroFormWithFields(saved));
+            Assert.DoesNotContain(" Do ", DecodePageContents(saved));
         }
         finally
         {

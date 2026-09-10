@@ -31,104 +31,104 @@ internal static class FormFlattener
         // is removed (silent data loss).
         EnsureBakeableAppearance(doc, field);
 
+        // Preflight the whole field before touching any page. A field may own several widgets; if a
+        // later widget cannot be placed, baking an earlier sibling would leave a partially flattened
+        // /Kids tree. The two plans below make the operation atomic at field scope.
+        var bakePlans = new List<(
+            PdfDictionary Widget,
+            PdfDictionary Page,
+            PdfLibrary.Core.PdfObject AppearanceEntry,
+            PdfStream Appearance,
+            double[] Placement)>();
+        var removeOnlyPlans = new List<(PdfDictionary Widget, PdfDictionary Page)>();
+        bool fieldHasValue = FieldHasValue(field);
+
         foreach (PdfDictionary widget in field.WidgetDicts)
         {
-            // Find the owning page: the page whose /Annots array contains this widget.
-            // We match by object identity (object number if indirect, or reference equality
-            // for direct dicts that the tree walk has already resolved).
             PdfDictionary? owningPage = FindOwningPage(doc, pages, widget);
-            if (owningPage is null) continue;
+            if (owningPage is null) return;
 
-            // Resolve /AP /N to a Form-XObject stream.
             PdfLibrary.Core.PdfObject? apRaw = widget.Get(new PdfName("AP"));
-            PdfLibrary.Core.PdfObject? apResolved = Resolve(doc, apRaw);
-            if (apResolved is not PdfDictionary apDict)
+            if (Resolve(doc, apRaw) is not PdfDictionary apDict)
             {
-                // No appearance at all. A full flatten must not leave the widget behind, but we must
-                // also not drop a value we failed to render — remove only when there is nothing to
-                // bake (RC2 clean-up / RC3 no-data-loss).
-                if (!FieldHasValue(field)) RemoveWidgetFromAnnots(doc, owningPage, widget);
+                if (fieldHasValue) return;
+                removeOnlyPlans.Add((widget, owningPage));
                 continue;
             }
 
             PdfLibrary.Core.PdfObject? nRaw = apDict.Get(new PdfName("N"));
             if (nRaw is null)
             {
-                if (!FieldHasValue(field)) RemoveWidgetFromAnnots(doc, owningPage, widget);
+                if (fieldHasValue) return;
+                removeOnlyPlans.Add((widget, owningPage));
                 continue;
             }
 
-            PdfLibrary.Core.PdfObject? nResolved = Resolve(doc, nRaw);
-
-            // /AP /N is either a single Form-XObject stream (text fields, push-buttons) or a
-            // state-keyed sub-dictionary (check boxes, radio buttons):
-            //   << /<onState> <stream> /Off <stream> >>
-            // For the state-keyed case, bake the stream named by the widget's /AS — the appearance
-            // that is currently visible. Falling through without handling this (the old behaviour)
-            // left the widget un-painted AND un-removed: an orphaned /Widget whose /Parent points at
-            // a now-deleted field, which Adobe prunes on resave (the radios "disappear").
             PdfStream? nStream = null;
-            PdfIndirectReference? apRef = null;
-
-            if (nResolved is PdfStream singleStream)
+            PdfLibrary.Core.PdfObject? selectedEntry = null;
+            switch (Resolve(doc, nRaw))
             {
-                nStream = singleStream;
-                apRef = nRaw as PdfIndirectReference ?? doc.RegisterObject(singleStream);
-            }
-            else if (nResolved is PdfDictionary stateDict)
-            {
-                string asState = widget.Get(new PdfName("AS")) is PdfName asName ? asName.Value : "Off";
-                PdfLibrary.Core.PdfObject? stateRaw = stateDict.Get(new PdfName(asState));
-                if (stateRaw is not null && Resolve(doc, stateRaw) is PdfStream stateStream)
+                case PdfStream singleStream:
+                    nStream = singleStream;
+                    selectedEntry = nRaw;
+                    break;
+                case PdfDictionary stateDict:
                 {
-                    nStream = stateStream;
-                    apRef = stateRaw as PdfIndirectReference ?? doc.RegisterObject(stateStream);
+                    string asState = widget.Get(new PdfName("AS")) is PdfName asName ? asName.Value : "Off";
+                    PdfLibrary.Core.PdfObject? stateRaw = stateDict.Get(new PdfName(asState));
+                    if (stateRaw is not null && Resolve(doc, stateRaw) is PdfStream stateStream)
+                    {
+                        nStream = stateStream;
+                        selectedEntry = stateRaw;
+                    }
+                    break;
                 }
             }
 
-            // Verify we resolved a Form-XObject to paint. If not (e.g. the /Off state has no stream),
-            // still remove the widget so it does not linger as an orphan.
-            if (nStream is null || apRef is null ||
+            if (nStream is null || selectedEntry is null ||
                 nStream.Dictionary.Get(new PdfName("Subtype")) is not PdfName { Value: "Form" })
             {
-                // Could not resolve a Form to paint (e.g. an /Off state with no stream). Remove only
-                // when there is no value to lose, mirroring the no-/AP case above (RC3).
-                if (!FieldHasValue(field)) RemoveWidgetFromAnnots(doc, owningPage, widget);
+                if (fieldHasValue) return;
+                removeOnlyPlans.Add((widget, owningPage));
                 continue;
             }
 
-            // Register the XObject as a resource on the page.
-            string xobjName = PageContentComposer.RegisterXObject(doc, owningPage, apRef);
+            // ISO 32000-1 §12.5.5: transform the appearance /BBox by its /Matrix, fit the
+            // transformed bounds to the annotation /Rect, then concatenate the two matrices.
+            double[]? rect = ReadNumberArray(doc, widget.Get(new PdfName("Rect")), 4);
+            double[]? bbox = ReadNumberArray(doc, nStream.Dictionary.Get(new PdfName("BBox")), 4);
+            PdfLibrary.Core.PdfObject? matrixRaw = nStream.Dictionary.Get(new PdfName("Matrix"));
+            double[]? matrix = matrixRaw is null
+                ? [1, 0, 0, 1, 0, 0]
+                : ReadNumberArray(doc, matrixRaw, 6);
+            double[]? aa = rect is not null && bbox is not null && matrix is not null
+                ? AppearancePlacement.ComputeAA(bbox, matrix, rect)
+                : null;
+            if (aa is null) return;
 
-            // Build the invocation using the widget /Rect to translate to the correct position.
-            double rx0 = 0, ry0 = 0;
-            PdfLibrary.Core.PdfObject? rectRaw = widget.Get(new PdfName("Rect"));
-            PdfLibrary.Core.PdfObject? rectResolved = Resolve(doc, rectRaw);
-            if (rectResolved is PdfArray { Count: >= 4 } rectArr)
-            {
-                double v0 = ToDouble(rectArr[0]);
-                double v1 = ToDouble(rectArr[1]);
-                double v2 = ToDouble(rectArr[2]);
-                double v3 = ToDouble(rectArr[3]);
-                rx0 = Math.Min(v0, v2);
-                ry0 = Math.Min(v1, v3);
-            }
-
-            // q 1 0 0 1 rx0 ry0 cm /name Do Q
-            string invocationStr = string.Format(
-                CultureInfo.InvariantCulture,
-                "q 1 0 0 1 {0:G} {1:G} cm /{2} Do Q\n",
-                rx0, ry0, xobjName);
-            byte[] invocationBytes = Encoding.Latin1.GetBytes(invocationStr);
-
-            PdfArray contents = PageContentComposer.EnsureContentsArray(doc, owningPage);
-            PageContentComposer.AddInvocation(doc, contents, invocationBytes, underlay: false);
-
-            // Remove the widget from the page /Annots array.
-            RemoveWidgetFromAnnots(doc, owningPage, widget);
+            bakePlans.Add((widget, owningPage, selectedEntry, nStream, aa));
         }
 
-        // Remove the field dict from /AcroForm /Fields.
+        foreach ((PdfDictionary widget, PdfDictionary page) in removeOnlyPlans)
+            RemoveWidgetFromAnnots(doc, page, widget);
+
+        foreach ((PdfDictionary widget, PdfDictionary page, PdfLibrary.Core.PdfObject appearanceEntry,
+                     PdfStream appearance, double[] aa) in bakePlans)
+        {
+            PdfIndirectReference apRef = appearanceEntry as PdfIndirectReference
+                                         ?? doc.RegisterObject(appearance);
+            string xobjName = PageContentComposer.RegisterXObject(doc, page, apRef);
+            string invocationStr = string.Format(
+                CultureInfo.InvariantCulture,
+                "q {0:G} {1:G} {2:G} {3:G} {4:G} {5:G} cm /{6} Do Q\n",
+                aa[0], aa[1], aa[2], aa[3], aa[4], aa[5], xobjName);
+            byte[] invocationBytes = Encoding.Latin1.GetBytes(invocationStr);
+
+            PdfArray contents = PageContentComposer.EnsureContentsArray(doc, page);
+            PageContentComposer.AddInvocation(doc, contents, invocationBytes, underlay: false);
+            RemoveWidgetFromAnnots(doc, page, widget);
+        }
+
         RemoveFieldFromAcroForm(doc, field.Dict);
     }
 
@@ -360,10 +360,23 @@ internal static class FormFlattener
     private static PdfLibrary.Core.PdfObject? Resolve(PdfDocument doc, PdfLibrary.Core.PdfObject? obj) =>
         obj is PdfIndirectReference r ? doc.GetObject(r.ObjectNumber) : obj;
 
-    private static double ToDouble(PdfLibrary.Core.PdfObject obj) => obj switch
+    private static double[]? ReadNumberArray(PdfDocument doc, PdfLibrary.Core.PdfObject? raw, int count)
     {
-        PdfReal r   => r.Value,
-        PdfInteger i => i.Value,
-        _            => 0.0
-    };
+        if (Resolve(doc, raw) is not PdfArray array || array.Count < count) return null;
+
+        var result = new double[count];
+        for (var i = 0; i < count; i++)
+        {
+            PdfLibrary.Core.PdfObject? value = Resolve(doc, array[i]);
+            result[i] = value switch
+            {
+                PdfReal r => r.Value,
+                PdfInteger integer => integer.Value,
+                _ => double.NaN
+            };
+            if (!double.IsFinite(result[i])) return null;
+        }
+
+        return result;
+    }
 }

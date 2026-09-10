@@ -123,6 +123,17 @@ public class PreflightSlice7Tests
         Assert.Empty(new AnnotationFlagsRule().Check(ctx));
     }
 
+    [Fact]
+    public void Annotation_flags_treat_non_numeric_F_as_missing_on_non_popup()
+    {
+        var ctx = Ctx(DocWith(new PdfArray(Annot("Link", a => a[N("F")] = new PdfName("None")))));
+
+        Finding finding = Assert.Single(new AnnotationFlagsRule().Check(ctx));
+
+        Assert.Equal("annotation-flags", finding.RuleId);
+        Assert.Contains("missing", finding.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(0)]   // Print not set
     [InlineData(2)]   // Hidden set
