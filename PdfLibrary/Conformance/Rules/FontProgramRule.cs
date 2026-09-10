@@ -22,8 +22,9 @@ namespace PdfLibrary.Conformance.Rules;
 ///     half is still pure lookup, no program parsing, but the no-name half falls back to a program-side
 ///     lookup for simple CFF, gated behind a symbolic-font exemption). NOT render-mode exempt ("regardless of
 ///     text rendering mode"), so this walks every shown code, including RM3 (invisible) text. Implemented for
-///     Type0 composite fonts with an Identity CMap, where the code equals the CID and the CID→GID map
-///     (CIDToGIDMap for CIDFontType2, the CFF charset for CIDFontType0) resolves to glyph/CID 0; and for
+///     Type0 composite fonts with an Identity CMap or an embedded two-byte CMap, where the encoding maps
+///     the code to a CID and the CID→GID map (CIDToGIDMap for CIDFontType2, the CFF charset for
+///     CIDFontType0) resolves to glyph/CID 0; and for
 ///     simple TrueType / simple CFF fonts via the PDF <c>/Encoding</c>'s <c>GetGlyphName</c>.</item>
 ///   <item><b>glyph-present (6.2.11.4.1 t2 / 7.21.4.1 t2):</b> a shown code whose (non-".notdef") glyph is
 ///     confidently absent from the embedded font program — mutually exclusive with the .notdef check
@@ -116,32 +117,56 @@ internal sealed class FontProgramRule : IConformanceRule
         IReadOnlyCollection<int> codes, IReadOnlyCollection<int> visibleCodes, bool showedIncompleteCode,
         HashSet<string> notdefReported, HashSet<string> metricsReported)
     {
-        // Only an Identity CMap lets us treat the shown two-byte code as the CID directly; any other CMap
-        // (predefined name or embedded stream) needs a CMap parser the engine lacks, so the font is skipped.
-        if (!IsIdentity(font.EncodingName) || font.DescendantFont is not CidFont cid)
+        if (font.DescendantFont is not CidFont cid
+            || ResolveCompositeEncoding(context, font) is not { } encoding)
             yield break;
+
+        bool identityEncoding = encoding.Identity;
+        CidCMap? encodingCMap = encoding.CMap;
+        bool inheritsUnparsedCMap = encodingCMap?.UseCMapName is not null;
+
+        int? MapCodeToCid(int code) =>
+            identityEncoding ? code : encodingCMap!.MapCodeToCid(code);
 
         bool cidKeyedCff = context.ResolveName(cid.FontDictionary.Get("Subtype")) == "CIDFontType0";
         if (cidKeyedCff && !metrics.IsCffFont)
             yield break; // CIDFontType0 maps CID→GID through the CFF charset — need the CFF program
 
         // .notdef (6.2.11.8) is NOT render-mode-exempt — walks ALL codes.
-        // An incomplete final code (an odd trailing byte under a two-byte CMap) cannot map to any
+        // An incomplete final code (an odd trailing byte under an Identity CMap) cannot map to any
         // glyph, so it is a .notdef reference — the same conclusion veraPDF reaches on
         // 6-2-11-4-1-t02-fail-e, whose completed CIDs are all present in the program.
-        bool notdefHit = showedIncompleteCode;
+        // An odd trailing byte is conclusively incomplete only for Identity-H/V. An embedded CMap
+        // may declare one-byte codespaces, which CidCMap deliberately does not model, so do not turn
+        // that collector signal into a false .notdef finding on the stream-encoding path.
+        bool notdefHit = identityEncoding && showedIncompleteCode;
         foreach (int code in codes)
         {
+            int? mappedCid = MapCodeToCid(code);
+            if (mappedCid is null)
+            {
+                // A local CMap with no mapping selects .notdef. If /usecmap names an unparsed base,
+                // however, the code may be defined there; skip rather than manufacture a finding.
+                if (!inheritsUnparsedCMap)
+                    notdefHit = true;
+                continue;
+            }
+            if (mappedCid is < 0 or > ushort.MaxValue)
+                continue; // implementation-limits owns out-of-range CIDs; do not truncate here
+
+            int cidValue = mappedCid.Value;
             // Strict (issue 42): a CID beyond the /CIDToGIDMap stream's coverage is .notdef per
             // ISO 32000-2 §9.7.6.3, which veraPDF applies — the renderer deliberately answers
             // identity for the same CID, so a conformance rule must not share its resolution.
-            int gid = cidKeyedCff ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGidStrict(code);
+            int gid = cidKeyedCff
+                ? metrics.GetGlyphIdByCid((ushort)cidValue)
+                : cid.MapCidToGidStrict(cidValue);
             // ISO 32000 §9.7.4.2: CID 0 IS .notdef, regardless of what glyph the map assigns — and
-            // under the Identity CMap gate above, code == CID. veraPDF keys 6.2.11.8 on the CID
+            // under an Identity CMap, code == CID. veraPDF keys 6.2.11.8 on the CID
             // (tracker issue 40, probe-confirmed): an explicit /CIDToGIDMap CAN point CID 0 at a
             // real, non-zero glyph, which the gid-only predicate accepted as fine. Keying only on
             // the mapped GID made our verdict diverge exactly when a "fix" rewrote the map that way.
-            if (gid == 0 || code == 0)
+            if (gid == 0 || cidValue == 0)
                 notdefHit = true; // a shown code with no glyph in the subset, or CID 0, renders/is .notdef
         }
 
@@ -151,8 +176,16 @@ internal sealed class FontProgramRule : IConformanceRule
         // defaultWidthX — resolved per-FD in the CFF parser). CIDFontType0 was formerly excluded because
         // a nominalWidthX/defaultWidthX confusion made omitted-width glyphs diverge by hundreds of units;
         // with that fixed, a conformant CFF-keyed font round-trips well inside the tolerance.
+        var visibleCids = new List<int>();
+        foreach (int code in visibleCodes)
+        {
+            int? mappedCid = MapCodeToCid(code);
+            if (mappedCid is >= 0 and <= ushort.MaxValue)
+                visibleCids.Add(mappedCid.Value);
+        }
+
         double worstDiff = 0;
-        foreach (WidthComparison w in ProgramWidthResolver.Composite(cid, metrics, cidKeyedCff, visibleCodes))
+        foreach (WidthComparison w in ProgramWidthResolver.Composite(cid, metrics, cidKeyedCff, visibleCids))
             worstDiff = Math.Max(worstDiff, Math.Abs(w.Declared - w.Program));
 
         if (notdefHit && notdefReported.Add(DedupKey(font)))
@@ -164,6 +197,32 @@ internal sealed class FontProgramRule : IConformanceRule
             yield return Make(context, font, "5",
                 $"The composite font {Name(font)} declares a glyph width that differs from the embedded font "
                 + $"program's advance width by {worstDiff:F0} units (tolerance {WidthTolerance:F0}).");
+    }
+
+    /// <summary>
+    /// Resolves the Type0 encoding without the registered-collection gates used by text extraction.
+    /// Identity names map code directly to CID; embedded CMaps use their explicit cidchar/cidrange
+    /// mappings. Other predefined names and undecodable streams remain conservative skips.
+    /// </summary>
+    private static (bool Identity, CidCMap? CMap)? ResolveCompositeEncoding(
+        ConformanceContext context, Type0Font font)
+    {
+        switch (context.Resolve(font.FontDictionary.Get("Encoding")))
+        {
+            case PdfName name when IsIdentity(name.Value):
+                return (true, null);
+            case PdfStream stream:
+                try
+                {
+                    return (false, CidCMap.Parse(stream.GetDecodedData(context.Document.Decryptor)));
+                }
+                catch
+                {
+                    return null;
+                }
+            default:
+                return null;
+        }
     }
 
     // ── Simple fonts — .notdef + glyph-present + metrics (TrueType + simple CFF) ──────────────────────

@@ -56,7 +56,7 @@ internal class Type0Font : PdfFont
         {
             if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? obj))
                 return null;
-            return obj is PdfName n ? n.Value : null;
+            return Resolve(obj) is PdfName n ? n.Value : null;
         }
     }
 

@@ -8,7 +8,11 @@ namespace PdfLibrary.Conformance.Rules;
 
 /// <summary>One comparable code: its resolved program glyph, the PDF-declared width, and the
 /// program's advance, both in 1000-per-em glyph space.</summary>
-internal readonly record struct WidthComparison(int Code, ushort Gid, double Declared, double Program);
+internal readonly record struct WidthComparison(
+    int Code, // character code for simple fonts; already-mapped CID for composite fonts
+    ushort Gid,
+    double Declared,
+    double Program);
 
 /// <summary>
 /// The width enumeration shared by <see cref="FontProgramRule"/> (6.2.11.5) and the F-4a width-repair
@@ -56,22 +60,24 @@ internal static class ProgramWidthResolver
         }
     }
 
-    /// <summary>Composite: code IS the CID (Identity CMap, enforced by the caller); declared from
-    /// /W else /DW via <see cref="CidFont.GetCharacterWidth"/>.</summary>
+    /// <summary>Composite: the caller supplies CIDs after applying the Type0 encoding CMap; declared
+    /// from /W else /DW via <see cref="CidFont.GetCharacterWidth"/>.</summary>
     public static IEnumerable<WidthComparison> Composite(
-        CidFont cid, EmbeddedFontMetrics metrics, bool cidKeyedCff, IEnumerable<int> codes)
+        CidFont cid, EmbeddedFontMetrics metrics, bool cidKeyedCff, IEnumerable<int> cids)
     {
-        foreach (int code in codes)
+        foreach (int cidValue in cids)
         {
             // Strict (issue 42): must agree with FontProgramRule's own .notdef resolution, or a CID
             // beyond the map's coverage would be skipped as .notdef by one and width-compared by
             // the other. The renderer's lenient answer is deliberately NOT used here.
-            int gid = cidKeyedCff ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGidStrict(code);
+            int gid = cidKeyedCff
+                ? metrics.GetGlyphIdByCid((ushort)cidValue)
+                : cid.MapCidToGidStrict(cidValue);
             if (gid == 0)
                 continue; // .notdef has no meaningful width to compare
 
             yield return new WidthComparison(
-                code, (ushort)gid, cid.GetCharacterWidth(code),
+                cidValue, (ushort)gid, cid.GetCharacterWidth(cidValue),
                 Scale(metrics, metrics.GetAdvanceWidth((ushort)gid)));
         }
     }
