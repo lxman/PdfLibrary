@@ -330,6 +330,85 @@ internal class PdfFontEncoding
     /// </summary>
     private static readonly string[] WinAnsiEncodingAsciiNames = BuildWinAnsiAsciiNames();
 
+    /// <summary>
+    /// WinAnsiEncoding's Annex D.2 names above ASCII. The six otherwise-unused Windows-1252
+    /// positions are <c>bullet</c> in the PDF encoding, and code 160/173 use the PDF glyph names
+    /// <c>nbspace</c>/<c>sfthyphen</c>. These are encoding-table assertions, not reverse-AGL guesses.
+    /// </summary>
+    private static readonly (int Code, string Name)[] WinAnsiEncodingUpperNames =
+    [
+        (127, "bullet"), (128, "Euro"), (129, "bullet"), (130, "quotesinglbase"),
+        (131, "florin"), (132, "quotedblbase"), (133, "ellipsis"), (134, "dagger"),
+        (135, "daggerdbl"), (136, "circumflex"), (137, "perthousand"), (138, "Scaron"),
+        (139, "guilsinglleft"), (140, "OE"), (141, "bullet"), (142, "Zcaron"),
+        (143, "bullet"), (144, "bullet"), (145, "quoteleft"), (146, "quoteright"),
+        (147, "quotedblleft"), (148, "quotedblright"), (149, "bullet"), (150, "endash"),
+        (151, "emdash"), (152, "tilde"), (153, "trademark"), (154, "scaron"),
+        (155, "guilsinglright"), (156, "oe"), (157, "bullet"), (158, "zcaron"),
+        (159, "Ydieresis"), (160, "nbspace"), (161, "exclamdown"), (162, "cent"),
+        (163, "sterling"), (164, "currency"), (165, "yen"), (166, "brokenbar"),
+        (167, "section"), (168, "dieresis"), (169, "copyright"), (170, "ordfeminine"),
+        (171, "guillemotleft"), (172, "logicalnot"), (173, "sfthyphen"), (174, "registered"),
+        (175, "macron"), (176, "degree"), (177, "plusminus"), (178, "twosuperior"),
+        (179, "threesuperior"), (180, "acute"), (181, "mu"), (182, "paragraph"),
+        (183, "periodcentered"), (184, "cedilla"), (185, "onesuperior"),
+        (186, "ordmasculine"), (187, "guillemotright"), (188, "onequarter"),
+        (189, "onehalf"), (190, "threequarters"), (191, "questiondown"), (192, "Agrave"),
+        (193, "Aacute"), (194, "Acircumflex"), (195, "Atilde"), (196, "Adieresis"),
+        (197, "Aring"), (198, "AE"), (199, "Ccedilla"), (200, "Egrave"),
+        (201, "Eacute"), (202, "Ecircumflex"), (203, "Edieresis"), (204, "Igrave"),
+        (205, "Iacute"), (206, "Icircumflex"), (207, "Idieresis"), (208, "Eth"),
+        (209, "Ntilde"), (210, "Ograve"), (211, "Oacute"), (212, "Ocircumflex"),
+        (213, "Otilde"), (214, "Odieresis"), (215, "multiply"), (216, "Oslash"),
+        (217, "Ugrave"), (218, "Uacute"), (219, "Ucircumflex"), (220, "Udieresis"),
+        (221, "Yacute"), (222, "Thorn"), (223, "germandbls"), (224, "agrave"),
+        (225, "aacute"), (226, "acircumflex"), (227, "atilde"), (228, "adieresis"),
+        (229, "aring"), (230, "ae"), (231, "ccedilla"), (232, "egrave"),
+        (233, "eacute"), (234, "ecircumflex"), (235, "edieresis"), (236, "igrave"),
+        (237, "iacute"), (238, "icircumflex"), (239, "idieresis"), (240, "eth"),
+        (241, "ntilde"), (242, "ograve"), (243, "oacute"), (244, "ocircumflex"),
+        (245, "otilde"), (246, "odieresis"), (247, "divide"), (248, "oslash"),
+        (249, "ugrave"), (250, "uacute"), (251, "ucircumflex"), (252, "udieresis"),
+        (253, "yacute"), (254, "thorn"), (255, "ydieresis"),
+    ];
+
+    /// <summary>
+    /// The assigned MacRomanEncoding names in Annex D.2's 128-255 band. Unlike WinAnsi this vector
+    /// is sparse; positions absent here retain the decoder's conservative, derived-name fallback.
+    /// </summary>
+    private static readonly (int Code, string Name)[] MacRomanEncodingUpperNames =
+    [
+        (128, "Adieresis"), (129, "Aring"), (130, "Ccedilla"), (131, "Eacute"),
+        (132, "Ntilde"), (133, "Odieresis"), (134, "Udieresis"), (135, "aacute"),
+        (136, "agrave"), (137, "acircumflex"), (138, "adieresis"), (139, "atilde"),
+        (140, "aring"), (141, "ccedilla"), (142, "eacute"), (143, "egrave"),
+        (144, "ecircumflex"), (145, "edieresis"), (146, "iacute"), (147, "igrave"),
+        (148, "icircumflex"), (149, "idieresis"), (150, "ntilde"), (151, "oacute"),
+        (152, "ograve"), (153, "ocircumflex"), (154, "odieresis"), (155, "otilde"),
+        (156, "uacute"), (157, "ugrave"), (158, "ucircumflex"), (159, "udieresis"),
+        (160, "dagger"), (161, "degree"), (162, "cent"), (163, "sterling"),
+        (164, "section"), (165, "bullet"), (166, "paragraph"), (167, "germandbls"),
+        (168, "registered"), (169, "copyright"), (170, "trademark"), (171, "acute"),
+        (172, "dieresis"), (174, "AE"), (175, "Oslash"), (177, "plusminus"),
+        (180, "yen"), (181, "mu"), (187, "ordfeminine"), (188, "ordmasculine"),
+        (190, "ae"), (191, "oslash"), (192, "questiondown"), (193, "exclamdown"),
+        (194, "logicalnot"), (196, "florin"), (199, "guillemotleft"),
+        (200, "guillemotright"), (201, "ellipsis"), (202, "nbspace"), (203, "Agrave"),
+        (204, "Atilde"), (205, "Otilde"), (206, "OE"), (207, "oe"), (208, "endash"),
+        (209, "emdash"), (210, "quotedblleft"), (211, "quotedblright"), (212, "quoteleft"),
+        (213, "quoteright"), (214, "divide"), (216, "ydieresis"), (217, "Ydieresis"),
+        (218, "fraction"), (219, "currency"), (220, "guilsinglleft"),
+        (221, "guilsinglright"), (222, "fi"), (223, "fl"), (224, "daggerdbl"),
+        (225, "periodcentered"), (226, "quotesinglbase"), (227, "quotedblbase"),
+        (228, "perthousand"), (229, "Acircumflex"), (230, "Ecircumflex"),
+        (231, "Aacute"), (232, "Edieresis"), (233, "Egrave"), (234, "Iacute"),
+        (235, "Icircumflex"), (236, "Idieresis"), (237, "Igrave"), (238, "Oacute"),
+        (239, "Ocircumflex"), (241, "Ograve"), (242, "Uacute"), (243, "Ucircumflex"),
+        (244, "Ugrave"), (245, "dotlessi"), (246, "circumflex"), (247, "tilde"),
+        (248, "macron"), (249, "breve"), (250, "dotaccent"), (251, "ring"),
+        (252, "cedilla"), (253, "hungarumlaut"), (254, "ogonek"), (255, "caron"),
+    ];
+
     private static string[] BuildWinAnsiAsciiNames()
     {
         string[] names = (string[])StandardEncodingAsciiNames.Clone();
@@ -419,39 +498,18 @@ internal class PdfFontEncoding
             encoding.SetCharacterName(32 + i, WinAnsiEncodingAsciiNames[i]);
         }
 
-        // Windows-1252 specific mappings (128-159)
-        encoding.SetUnicode(128, "\u20AC"); // Euro sign
-        encoding.SetUnicode(130, "\u201A"); // Single low-9 quotation mark
-        encoding.SetUnicode(131, "\u0192"); // Latin small letter f with hook
-        encoding.SetUnicode(132, "\u201E"); // Double low-9 quotation mark
-        encoding.SetUnicode(133, "\u2026"); // Horizontal ellipsis
-        encoding.SetUnicode(134, "\u2020"); // Dagger
-        encoding.SetUnicode(135, "\u2021"); // Double dagger
-        encoding.SetUnicode(136, "\u02C6"); // Modifier letter circumflex accent
-        encoding.SetUnicode(137, "\u2030"); // Per mille sign
-        encoding.SetUnicode(138, "\u0160"); // Latin capital letter S with caron
-        encoding.SetUnicode(139, "\u2039"); // Single left-pointing angle quotation mark
-        encoding.SetUnicode(140, "\u0152"); // Latin capital ligature OE
-        encoding.SetUnicode(142, "\u017D"); // Latin capital letter Z with caron
-        encoding.SetUnicode(145, "\u2018"); // Left single quotation mark
-        encoding.SetUnicode(146, "\u2019"); // Right single quotation mark
-        encoding.SetUnicode(147, "\u201C"); // Left double quotation mark
-        encoding.SetUnicode(148, "\u201D"); // Right double quotation mark
-        encoding.SetUnicode(149, "\u2022"); // Bullet
-        encoding.SetUnicode(150, "\u2013"); // En dash
-        encoding.SetUnicode(151, "\u2014"); // Em dash
-        encoding.SetUnicode(152, "\u02DC"); // Small tilde
-        encoding.SetUnicode(153, "\u2122"); // Trade mark sign
-        encoding.SetUnicode(154, "\u0161"); // Latin small letter s with caron
-        encoding.SetUnicode(155, "\u203A"); // Single right-pointing angle quotation mark
-        encoding.SetUnicode(156, "\u0153"); // Latin small ligature oe
-        encoding.SetUnicode(158, "\u017E"); // Latin small letter z with caron
-        encoding.SetUnicode(159, "\u0178"); // Latin capital letter Y with diaeresis
-
-        // Latin-1 Supplement (160-255) - map directly to Unicode
-        for (var i = 160; i <= 255; i++)
+        foreach ((int code, string name) in WinAnsiEncodingUpperNames)
         {
-            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+            // Preserve the pre-issue-62 encode-direction mapping for every position that already
+            // had one. The six PDF-only bullet aliases previously had no mapping; assigning only
+            // their names avoids changing U+2022's preferred encoded byte from code 149.
+            if (code is not (127 or 129 or 141 or 143 or 144 or 157))
+            {
+                string unicode = GlyphList.GetUnicode(name)
+                    ?? throw new InvalidOperationException($"WinAnsiEncoding name '{name}' has no AGL mapping.");
+                encoding.SetUnicode(code, unicode);
+            }
+            encoding.SetCharacterName(code, name);
         }
 
         return encoding;
@@ -484,6 +542,11 @@ internal class PdfFontEncoding
             }
         }
 
+        foreach ((int code, string name) in MacRomanEncodingUpperNames)
+        {
+            encoding.SetCharacterName(code, name);
+        }
+
         return encoding;
     }
 
@@ -491,24 +554,23 @@ internal class PdfFontEncoding
     private static PdfFontEncoding CreateMacExpertEncoding()
     {
         // MacExpertEncoding is similar to MacRomanEncoding but for expert fonts — this is only a
-        // placeholder: codes 32-126 below are WinAnsi's ordinary ASCII names ("A", "period", …), not
-        // the real ISO 32000-1 Annex D.4 expert-set names (fraction, small-caps letters, superiors,
-        // ornaments, …), which nobody has written yet. Delegating this band to CreateMacRomanEncoding
-        // (as this method used to do wholesale) would now be wrong: since B1 rebuilt
-        // CreateMacRomanEncoding to assign that band BY NAME via SetCharacterName, its names come back
-        // marked document-asserted (IsDerivedName == false) — correct for MacRoman, where they really
-        // are Annex D.2's names, but not here, where they are known-wrong stand-ins. An asserted name
+        // placeholder: the borrowed MacRoman names are not the real ISO 32000-1 Annex D.4 expert-set
+        // names (fraction, small-caps letters, superiors, ornaments, …), which nobody has written yet.
+        // Delegation is safe only if every borrowed name is returned to DERIVED provenance. B1 first
+        // made MacRoman's ASCII names authoritative, and issue 62 completed its upper Annex D.2 vector.
+        // Those assertions are correct for MacRoman but not here, where they are known-wrong stand-ins.
+        // An asserted name
         // lets ResolveSimpleGlyph's CFF arm convict a font of a missing glyph with confidence; handing
         // it a name nobody actually asserted would be a brand-new false-positive path on the
-        // zero-false-positive invariant, opened by accident rather than decided. So this band is
-        // rebuilt directly via the pre-B1 SetUnicode loop, restoring exactly this method's own
-        // pre-branch behaviour and keeping these names DERIVED until someone writes the real Annex
-        // D.4 table.
+        // zero-false-positive invariant, opened by accident rather than decided. The placeholder is
+        // therefore rebuilt through SetUnicode across the whole borrowed range, restoring this
+        // method's pre-B1 provenance until someone writes the real Annex D.4 table.
         PdfFontEncoding encoding = CreateMacRomanEncoding();
-        for (var i = 32; i <= 126; i++)
+        for (var i = 32; i <= 255; i++)
         {
-            encoding._codeToName.Remove(i); // undo MacRoman's SetCharacterName so SetUnicode re-derives
-            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+            string unicode = i <= 126 ? char.ConvertFromUtf32(i) : encoding.DecodeCharacter(i);
+            encoding._codeToName.Remove(i); // undo MacRoman's asserted names so SetUnicode re-derives
+            encoding.SetUnicode(i, unicode);
         }
         return encoding;
     }

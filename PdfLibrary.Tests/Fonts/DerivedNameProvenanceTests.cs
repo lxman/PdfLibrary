@@ -16,8 +16,9 @@ namespace PdfLibrary.Tests.Fonts;
 /// Task 10 fix round (issues 27-28 follow-up review, 2026-08-16): the AGL completion added ~4,000
 /// reverse (Unicode → name) entries. <see cref="PdfFontEncoding.SetUnicode"/> uses that reverse map
 /// as a rendering-fallback to DERIVE a glyph name for a code that has Unicode but no
-/// encoding-assigned name (e.g. every code in a WinAnsiEncoding-based font — <c>CreateWinAnsiEncoding</c>
-/// calls <c>SetUnicode</c> exclusively, never <c>SetCharacterName</c>). <c>FontProgramRule</c>'s CFF
+/// encoding-assigned name. At the time, <c>CreateWinAnsiEncoding</c> called <c>SetUnicode</c>
+/// exclusively; the ASCII band later gained its Annex D names, followed by the upper band under
+/// issue 62. <c>FontProgramRule</c>'s CFF
 /// glyph-present resolver (<c>ResolveSimpleGlyph</c>) treated that derived name as authoritative: a
 /// miss against the font's own (subsetted) charset became a confident <c>NotDef</c> — a false
 /// positive, since a derived name is this engine's own reconstruction, never something the document
@@ -41,11 +42,9 @@ public class DerivedNameProvenanceTests
     private static PdfArray Rect(int x0, int y0, int x1, int y1) =>
         new(new PdfInteger(x0), new PdfInteger(y0), new PdfInteger(x1), new PdfInteger(y1));
 
-    // Probe code 169 ('©' / "copyright" under WinAnsiEncoding). Moved off code 65 ('A') 2026-08-20
-    // (this branch): Task 6 assigns WinAnsi's ASCII band (32-126) BY NAME now, not by reverse-AGL,
-    // so 'A' is no longer a derived name and can't probe the derived-name premise any more --
-    // WinAnsiEncoding's Latin-1 Supplement band (160-255) is the part Task 6 left as SetUnicode-only
-    // (see PdfFontEncoding.CreateWinAnsiEncoding), so it is still reverse-AGL derived. The fixture's
+    // Probe code 169 ('©' / "copyright" under WinAnsiEncoding). It originally moved off code 65 ('A')
+    // when Task 6 made the ASCII band authoritative. Issue 62 now completes the same provenance fix
+    // for the upper band, so this fixture is the live positive witness for that follow-up. The fixture's
     // built-in CFF Encoding maps a DIFFERENT code (90) to its one custom glyph, and its charset holds
     // only that custom glyph plus "emdash" — neither is "copyright" — so code 169 is unmapped by
     // both the built-in encoding AND a by-name charset lookup: exactly the shape that, pre-fix, made
@@ -58,9 +57,9 @@ public class DerivedNameProvenanceTests
         SymbolicCffFixtureFont.Build(BuiltInMappedCode, CustomGlyphName, customAdvance: 576, emdashAdvance: 1000);
 
     /// <summary>One-page document, non-symbolic CFF font, <c>/Encoding</c> = a dict whose
-    /// <c>/BaseEncoding</c> is <c>/WinAnsiEncoding</c> and carries NO <c>/Differences</c> — so every
-    /// code's name (including <see cref="ProbeCode"/>'s) is SetUnicode-derived, never
-    /// SetCharacterName-assigned. Shows <see cref="ProbeCode"/> in its content stream.</summary>
+    /// <c>/BaseEncoding</c> is <c>/WinAnsiEncoding</c> and carries NO <c>/Differences</c>, so the
+    /// probe name comes solely from the predefined encoding's Annex D vector. Shows
+    /// <see cref="ProbeCode"/> in its content stream.</summary>
     private static PdfDocument BuildDoc()
     {
         var doc = new PdfDocument();
@@ -128,25 +127,24 @@ public class DerivedNameProvenanceTests
     }
 
     [Fact]
-    public void Winansi_base_encoding_derives_the_probe_codes_name()
+    public void Winansi_base_encoding_asserts_the_probe_codes_annex_d_name()
     {
         using PdfDocument doc = BuildDoc();
         PdfFont font = FontFrom(doc);
         Assert.Equal("copyright", font.Encoding!.GetGlyphName(ProbeCode));
-        Assert.True(font.Encoding.IsDerivedName(ProbeCode));
+        Assert.False(font.Encoding.IsDerivedName(ProbeCode));
     }
 
     [Fact]
-    public void Derived_name_code_absent_from_program_yields_no_glyph_present_finding()
+    public void Winansi_upper_band_name_absent_from_program_yields_a_glyph_present_finding()
     {
-        // The regression this fix closes: a code whose name came from SetUnicode's reverse-AGL
-        // fallback, not the document's own encoding data, must not be treated as a confident
-        // .notdef when it misses the font's (subsetted) charset and built-in encoding.
+        // WinAnsiEncoding is document-selected encoding data. Its Annex D name is authoritative,
+        // so a miss against the embedded CFF charset and built-in encoding is a confident absence.
         using PdfDocument doc = BuildDoc();
         Finding[] findings = new FontProgramRule()
             .Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)).ToArray();
 
-        Assert.DoesNotContain(findings, f => ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.4.1");
+        Assert.Contains(findings, f => ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.4.1");
     }
 
     [Fact]

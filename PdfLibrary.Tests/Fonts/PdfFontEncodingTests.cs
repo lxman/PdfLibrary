@@ -267,6 +267,44 @@ public class PdfFontEncodingTests
         }
     }
 
+    [Theory]
+    [InlineData(127, "bullet", "\u2022")]
+    [InlineData(128, "Euro", "\u20AC")]
+    [InlineData(129, "bullet", "\u2022")]
+    [InlineData(169, "copyright", "\u00A9")]
+    [InlineData(173, "sfthyphen", "\u00AD")]
+    [InlineData(255, "ydieresis", "\u00FF")]
+    public void WinAnsi_upper_names_are_document_asserted_not_derived(
+        int code, string expectedName, string expectedUnicode)
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+
+        Assert.Equal(expectedName, enc.GetGlyphName(code));
+        Assert.False(enc.IsDerivedName(code));
+        Assert.Equal(expectedUnicode, enc.DecodeCharacter(code));
+    }
+
+    [Fact]
+    public void WinAnsi_upper_provenance_change_preserves_existing_reverse_mappings()
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+
+        Assert.Equal((byte)169, enc.EncodeCharacter('\u00A9'));
+        Assert.Equal((byte)149, enc.EncodeCharacter('\u2022'));
+    }
+
+    [Fact]
+    public void WinAnsi_annex_d_vector_asserts_every_code_above_ascii()
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+
+        for (var code = 127; code <= 255; code++)
+        {
+            Assert.NotNull(enc.GetGlyphName(code));
+            Assert.False(enc.IsDerivedName(code));
+        }
+    }
+
     // ── Task 6 review follow-up: MacRoman reuses WinAnsiEncodingAsciiNames on the untested claim
     // that MacRoman's ASCII names match WinAnsi's. No corpus fixture exercises MacRoman's ASCII
     // range, so these tests — not a comment — are what stands behind that commit.
@@ -317,6 +355,52 @@ public class PdfFontEncodingTests
         }
     }
 
+    [Theory]
+    [InlineData(128, "Adieresis", "\u00C4")]
+    [InlineData(169, "copyright", "\u00A9")]
+    [InlineData(202, "nbspace", "\u00A0")]
+    [InlineData(208, "endash", "\u2013")]
+    [InlineData(255, "caron", "\u02C7")]
+    public void MacRoman_upper_names_are_document_asserted_not_derived(
+        int code, string expectedName, string expectedUnicode)
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+
+        Assert.Equal(expectedName, enc.GetGlyphName(code));
+        Assert.False(enc.IsDerivedName(code));
+        Assert.Equal(expectedUnicode, enc.DecodeCharacter(code));
+    }
+
+    [Fact]
+    public void MacRoman_annex_d_vector_asserts_exactly_its_assigned_upper_codes()
+    {
+        int[] assignedCodes =
+        [
+            128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
+            144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
+            160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 174, 175, 177,
+            180, 181, 187, 188, 190, 191, 192, 193, 194, 196, 199, 200, 201, 202, 203, 204,
+            205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 216, 217, 218, 219, 220, 221,
+            222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237,
+            238, 239, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254,
+            255,
+        ];
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+
+        for (var code = 128; code <= 255; code++)
+        {
+            if (assignedCodes.Contains(code))
+            {
+                Assert.NotNull(enc.GetGlyphName(code));
+                Assert.False(enc.IsDerivedName(code));
+            }
+            else
+            {
+                Assert.True(enc.GetGlyphName(code) is null || enc.IsDerivedName(code));
+            }
+        }
+    }
+
     // ── I2 (whole-branch review): MacExpertEncoding was swept into the MacRoman provenance change
     // by delegation, unnoticed. Its ASCII band ("A", "period", …) is NOT Annex D.4's real expert-set
     // names — nobody has written that table — so those names must stay DERIVED, unlike MacRoman's
@@ -349,5 +433,15 @@ public class PdfFontEncodingTests
             Assert.False(mac.IsDerivedName(code));
             Assert.True(expert.IsDerivedName(code));
         }
+    }
+
+    [Fact]
+    public void MacExpert_upper_placeholder_names_stay_derived_not_document_asserted()
+    {
+        PdfFontEncoding expert = PdfFontEncoding.GetStandardEncoding("MacExpertEncoding");
+
+        Assert.Equal("copyright", expert.GetGlyphName(169));
+        Assert.True(expert.IsDerivedName(169));
+        Assert.Equal("\u00A9", expert.DecodeCharacter(169));
     }
 }
