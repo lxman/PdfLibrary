@@ -430,6 +430,107 @@ public class FontInventoryTests
         Assert.Empty(presentButUnused.PagesUsedOn);
     }
 
+    [Fact]
+    public void Read_IncludesCodesDrawnOnlyByAnnotationAppearanceStreams()
+    {
+        using PdfDocument document = BuildAnnotationAppearanceDocument();
+        IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(document);
+
+        FontInventoryEntry normalAppearance = inventory.Single(e => e.Id.ObjectNumber == 30);
+        Assert.Equal([65], normalAppearance.UsedCodes);
+        Assert.Equal([0], normalAppearance.PagesUsedOn);
+
+        FontInventoryEntry namedDownAppearance = inventory.Single(e => e.Id.ObjectNumber == 31);
+        Assert.Equal([66], namedDownAppearance.UsedCodes);
+        Assert.Equal([0], namedDownAppearance.PagesUsedOn);
+
+        FontInventoryEntry invalidAppearanceKey = inventory.Single(e => e.Id.ObjectNumber == 32);
+        Assert.Empty(invalidAppearanceKey.UsedCodes);
+        Assert.Empty(invalidAppearanceKey.PagesUsedOn);
+    }
+
+    /// <summary>One annotation whose indirect /AP dictionary contains a direct /N appearance, a /D
+    /// appearance subdictionary, and an invalid extra-keyed stream. The page content references none
+    /// of their fonts, so the collector must attribute the two valid states to the host page without
+    /// treating the malformed extra entry as rendered.</summary>
+    private static PdfDocument BuildAnnotationAppearanceDocument()
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(30, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"), [N("Subtype")] = N("Type1"),
+            [N("BaseFont")] = N("NormalAppearanceFont"), [N("Encoding")] = N("WinAnsiEncoding"),
+        });
+        doc.AddObject(31, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"), [N("Subtype")] = N("Type1"),
+            [N("BaseFont")] = N("DownAppearanceFont"), [N("Encoding")] = N("WinAnsiEncoding"),
+        });
+        doc.AddObject(32, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"), [N("Subtype")] = N("Type1"),
+            [N("BaseFont")] = N("InvalidAppearanceKeyFont"), [N("Encoding")] = N("WinAnsiEncoding"),
+        });
+        doc.AddObject(50, 0, new PdfStream(
+            new PdfDictionary
+            {
+                [N("Type")] = N("XObject"), [N("Subtype")] = N("Form"),
+                [N("BBox")] = Rect(0, 0, 20, 20),
+                [N("Resources")] = new PdfDictionary
+                {
+                    [N("Font")] = new PdfDictionary { [N("F0")] = Ref(30) },
+                },
+            },
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf (A) Tj ET")));
+        doc.AddObject(51, 0, new PdfStream(
+            new PdfDictionary
+            {
+                [N("Type")] = N("XObject"), [N("Subtype")] = N("Form"),
+                [N("BBox")] = Rect(0, 0, 20, 20),
+                [N("Resources")] = new PdfDictionary
+                {
+                    [N("Font")] = new PdfDictionary { [N("F1")] = Ref(31) },
+                },
+            },
+            Encoding.ASCII.GetBytes("BT /F1 12 Tf (B) Tj ET")));
+        doc.AddObject(52, 0, new PdfStream(
+            new PdfDictionary
+            {
+                [N("Type")] = N("XObject"), [N("Subtype")] = N("Form"),
+                [N("BBox")] = Rect(0, 0, 20, 20),
+                [N("Resources")] = new PdfDictionary
+                {
+                    [N("Font")] = new PdfDictionary { [N("F2")] = Ref(32) },
+                },
+            },
+            Encoding.ASCII.GetBytes("BT /F2 12 Tf (C) Tj ET")));
+        doc.AddObject(61, 0, new PdfDictionary
+        {
+            [N("N")] = Ref(50),
+            [N("D")] = new PdfDictionary { [N("Pressed")] = Ref(51) },
+            [N("Unexpected")] = Ref(52),
+        });
+        doc.AddObject(60, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Annot"), [N("Subtype")] = N("Widget"),
+            [N("Rect")] = Rect(0, 0, 20, 20), [N("AP")] = Ref(61),
+        });
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes("q Q")));
+        doc.AddObject(3, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"), [N("Parent")] = Ref(2),
+            [N("MediaBox")] = Rect(0, 0, 612, 792), [N("Contents")] = Ref(11),
+            [N("Resources")] = new PdfDictionary(), [N("Annots")] = new PdfArray(Ref(60)),
+        });
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
     /// <summary>One page with two Type1 fonts: object 30 is drawn only via a Form XObject's own
     /// resources (the recursion a page-level-only resource scan misses); object 40 sits in the
     /// page's own /Font resources but the content stream never selects it with /Tf (the "present but

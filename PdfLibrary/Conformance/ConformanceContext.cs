@@ -123,9 +123,9 @@ internal sealed class ConformanceContext
         _pageTransparency ??= TransparencyAnalysis.Analyze(this);
 
     /// <summary>
-    /// Every font used for text showing and the character codes drawn with it, walking page content and
-    /// Form XObjects. Backs the PDF/A-2u Unicode-mapping rules (which need the codes actually used, not the
-    /// codes a font declares). Cached.
+    /// Every font used for text showing and the character codes drawn with it, walking page content,
+    /// annotation appearance streams and Form XObjects. Backs the PDF/A-2u Unicode-mapping rules (which
+    /// need the codes actually used, not the codes a font declares). Cached.
     /// </summary>
     public IReadOnlyList<UsedFontCodes> UsedTextGlyphs { get { EnsureUsedTextGlyphs(); return _usedTextGlyphs!; } }
 
@@ -235,7 +235,7 @@ internal sealed class ConformanceContext
     /// <summary>
     /// For each font dictionary actually drawn with — a character shown via a text-showing operator
     /// while it was the selected /Tf font — the indices of the pages it was drawn on. Computed from
-    /// the SAME per-page content-stream walk as <see cref="UsedTextGlyphs"/>, captured before that
+    /// the SAME per-page usage walk as <see cref="UsedTextGlyphs"/>, captured before that
     /// walk merges codes across pages and discards which page each one came from. A font merely
     /// PRESENT in a page's (or an inherited, or a Form XObject's) resource dictionary but never
     /// selected to draw a character is not "used" on that page: recovering page attribution from
@@ -434,7 +434,14 @@ internal sealed class ConformanceContext
             // boundary still parses (ISO 32000-1 7.8.2), matching the renderer's page-content handling.
             var collector = new ToUnicodeUsageCollector(page.GetResources(), Document);
             try { collector.ProcessOperators(PageContentOperators(page)); }
-            catch (Exception) { continue; } // unparseable content: skip this page's usage
+            catch (Exception) { /* unparseable page content does not hide valid annotation appearances */ }
+
+            if (page.GetAnnotations() is { } annotations)
+            {
+                foreach (PdfObject entry in annotations)
+                    if (Resolve(entry) is PdfDictionary annotation)
+                        collector.ProcessAppearanceStreams(annotation.Get("AP"));
+            }
 
             foreach ((PdfFont font, HashSet<int> codes) in collector.Result)
             {

@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Fixed
+- Font-program preflight and remediation inventory now include character codes drawn in annotation
+  `/N`, `/D`, and `/R` appearance streams, including named-state appearances. AP-only `.notdef`,
+  glyph-presence, width, and ToUnicode defects are no longer suppressed as if their fonts were unused.
 - PDF/A annotation-flags preflight now reports a non-Popup annotation whose `/F` value is
   non-numeric, matching veraPDF's 6.3.2 test-1 verdict instead of treating any raw value as present.
 - Annotation appearances now use the complete ISO 32000-1 §12.5.5 placement algorithm in both

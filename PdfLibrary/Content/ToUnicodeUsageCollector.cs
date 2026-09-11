@@ -7,8 +7,9 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Content;
 
 /// <summary>
-/// Scans a content stream (page content + Form XObjects, recursively) and records, per font actually used
-/// for text showing, the set of character codes drawn. Modelled on <see cref="GlyphUsageCollector"/> and
+/// Scans page and annotation-appearance content streams (including Form XObjects, recursively) and records,
+/// per font actually used for text showing, the set of character codes drawn. Modelled on
+/// <see cref="GlyphUsageCollector"/> and
 /// <see cref="PdfTextExtractor"/>: it mirrors their content-processor state tracking and text-show dispatch,
 /// but keeps CHARACTER CODES (not glyph IDs) so a conformance rule can ask whether each used code maps to
 /// Unicode (PDF/A-2u, ISO 19005-2 6.2.11.7.2). Codes are split per font: one byte for simple fonts, two
@@ -61,14 +62,54 @@ internal sealed class ToUnicodeUsageCollector : PdfContentProcessor
         if (xobject is null || PdfImage.IsImageXObject(xobject) || !IsFormXObject(xobject))
             return;
 
-        byte[] contentData = xobject.GetDecodedData(_document?.Decryptor);
+        ProcessNestedStream(xobject, CurrentState.RenderingMode);
+    }
+
+    /// <summary>
+    /// Processes every /N, /D and /R stream in an annotation appearance dictionary, including named-state
+    /// subdictionaries. Each appearance is an independent Form XObject execution, so it starts with the
+    /// default text rendering mode rather than inheriting the state left by the page content walk.
+    /// </summary>
+    internal void ProcessAppearanceStreams(PdfObject? appearanceObject)
+    {
+        if (Resolve(appearanceObject) is not PdfDictionary appearance)
+            return;
+
+        ProcessAppearanceState(appearance.Get("N"));
+        ProcessAppearanceState(appearance.Get("D"));
+        ProcessAppearanceState(appearance.Get("R"));
+    }
+
+    private void ProcessAppearanceState(PdfObject? stateObject)
+    {
+        switch (Resolve(stateObject))
+        {
+            case PdfStream stream:
+                ProcessNestedStream(stream, inheritedRenderingMode: 0);
+                break;
+            case PdfDictionary namedStates:
+                foreach (PdfObject namedState in namedStates.Values)
+                    if (Resolve(namedState) is PdfStream namedStream)
+                        ProcessNestedStream(namedStream, inheritedRenderingMode: 0);
+                break;
+        }
+    }
+
+    private PdfObject? Resolve(PdfObject? obj) =>
+        obj is PdfIndirectReference reference && _document is not null
+            ? _document.ResolveReference(reference)
+            : obj;
+
+    private void ProcessNestedStream(PdfStream stream, int inheritedRenderingMode)
+    {
+        byte[] contentData;
+        try { contentData = stream.GetDecodedData(_document?.Decryptor); }
+        catch { return; }
 
         PdfResources? formResources = _resources;
-        if (xobject.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? resObj))
+        if (stream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? resObj))
         {
-            if (resObj is PdfIndirectReference r && _document is not null)
-                resObj = _document.ResolveReference(r);
-            if (resObj is PdfDictionary resDict)
+            if (Resolve(resObj) is PdfDictionary resDict)
                 formResources = new PdfResources(resDict, _document);
         }
 
@@ -77,8 +118,9 @@ internal sealed class ToUnicodeUsageCollector : PdfContentProcessor
         // conformance exemption depends on the text rendering mode specifically, so seed just that — not
         // the rest of the state (font inheritance is a separate, pre-existing under-detection bias, out of
         // scope here). If the form sets its own Tr, that operator overrides the seeded value normally.
-        nested.CurrentState.RenderingMode = CurrentState.RenderingMode;
-        nested.ProcessOperators(PdfContentParser.Parse(contentData));
+        nested.CurrentState.RenderingMode = inheritedRenderingMode;
+        try { nested.ProcessOperators(PdfContentParser.Parse(contentData)); }
+        catch { return; }
 
         foreach ((PdfFont font, HashSet<int> codes) in nested.Result)
         {

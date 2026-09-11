@@ -677,25 +677,19 @@ internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// operator on any page — is excluded here rather than joining <paramref name="members"/>.
     /// <see cref="FontInventory"/> populates <c>UsedCodes</c> from
     /// <c>ConformanceContext.EnsureUsedTextGlyphs</c>/<c>ToUnicodeUsageCollector</c>, which walks page
-    /// CONTENT STREAMS and Form XObjects invoked by <c>Do</c> from them, recursively — so an empty list
-    /// here means, precisely, no glyph from this font is drawn in any page content stream or Form
-    /// XObject reachable from one. <b>It does NOT mean the font draws nothing anywhere</b> — that is a
-    /// narrower, WEAKER guarantee than an earlier version of this comment claimed. Four paths render a
-    /// font <see cref="ReferencedFontWalker"/> discovers (so <see cref="FontInventory"/> still creates
-    /// an entry for it) that the usage walk above structurally cannot see, leaving <c>UsedCodes</c>
-    /// falsely empty: an annotation appearance stream (<c>/AP</c> — the usage walk only ever visits
-    /// <c>Pages</c>, never <c>annotations</c>), a tiling pattern (painted via <c>scn</c>/fill, never
-    /// invoked through <c>Do</c>, so <c>OnInvokeXObject</c> never sees it), a Type3 glyph's own CharProc
-    /// (executed per-glyph by the renderer, never parsed as page content), and an ExtGState <c>/Font</c>
-    /// entry (<c>PdfContentProcessor</c> never overrides <c>OnSetGraphicsState</c> to read it, so a font
-    /// set only that way is never named by <c>CurrentState.FontName</c>). This is a pre-existing,
-    /// document-wide gap between the discovery and usage walks (tracker issue 51) — not introduced or
-    /// widened here, but now something THREE mechanisms (this filter, <c>FontProgramRule</c> itself, and
-    /// every width/notdef proposal builder that reads <c>UsedCodes</c>) lean on as if it were ground
-    /// truth about what renders. For THIS filter specifically: excluding a false-empty candidate can, in
-    /// the rare case a font is drawn only through one of the four paths above, silently drop it from a
-    /// merge that would otherwise have covered it — a real (if narrow) regression risk, not merely a
-    /// missed optimization, left open pending issue 51.</para>
+    /// content streams, Form XObjects invoked by <c>Do</c> from them recursively, and every annotation
+    /// appearance stream. An empty list here therefore means no glyph from this font is drawn in those
+    /// scopes. <b>It does NOT mean the font draws nothing anywhere</b> — that remains a narrower, weaker
+    /// guarantee than an earlier version of this comment claimed. Three paths can still render a font
+    /// <see cref="ReferencedFontWalker"/> discovers (so <see cref="FontInventory"/> creates an entry for
+    /// it) while leaving <c>UsedCodes</c> falsely empty: a tiling pattern (painted via <c>scn</c>/fill,
+    /// never invoked through <c>Do</c>), a Type3 glyph's own CharProc (executed per-glyph by the renderer,
+    /// never parsed as page content), and an ExtGState <c>/Font</c> entry (the usage collector does not
+    /// consult it when <c>gs</c> runs). Tracker issue 51 closed the measured annotation-appearance path;
+    /// these residual paths remain zero-population or unmeasured. Three mechanisms still lean on this
+    /// partial signal: this filter, <c>FontProgramRule</c>, and every width/notdef proposal builder that
+    /// reads <c>UsedCodes</c>. For this filter specifically, excluding a false-empty candidate can still
+    /// drop it from a merge that would otherwise have covered it, so the residual issue remains recorded.</para>
     ///
     /// <para>Left unfiltered, a genuinely-undrawn candidate still reaches
     /// <c>BuildMergedReplacement</c>'s per-sibling coverage loop, where <c>CidReplacementMap.Build</c>
