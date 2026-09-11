@@ -440,7 +440,9 @@ internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     if (processedGroups.Add(key))
                     {
                         proposals.AddRange(
-                            DeclineAll(members, ruleId, MergeBlockedSibling(blockedNotdefReason)));
+                            DeclineAll(
+                                members, ruleId, MergeBlockedSibling(blockedNotdefReason),
+                                FontDeclineCategory.MergeBlockedSibling));
                     }
 
                     // Frees this entry's width finding for the arm below, exactly like a genuinely
@@ -559,7 +561,9 @@ internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 {
                     if (!processedWidthGroups.Add(widthKey)) continue;
                     proposals.AddRange(
-                        DeclineAll(widthMembers, ruleId, MergeBlockedSibling(blockedReason, widthFamily: true)));
+                        DeclineAll(
+                            widthMembers, ruleId, MergeBlockedSibling(blockedReason, widthFamily: true),
+                            FontDeclineCategory.MergeBlockedSibling));
                     continue;
                 }
 
@@ -603,12 +607,14 @@ internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // collapses. Non-decline proposals are never deduped here: two PatchWidthsProposals or
         // ReplaceProgramProposals with identical fields would be a planner bug worth seeing, not noise
         // to hide.
-        var seenDeclines = new HashSet<(int ObjectNumber, string RuleId, string Reason)>();
+        var seenDeclines = new HashSet<(
+            int ObjectNumber, string RuleId, string Reason, FontDeclineCategory Category)>();
         var deduped = new List<FontProposal>(proposals.Count);
         foreach (FontProposal p in proposals)
         {
             if (p is DeclineProposal decline
-                && !seenDeclines.Add((decline.Font.ObjectNumber, decline.RuleId, decline.Reason)))
+                && !seenDeclines.Add((
+                    decline.Font.ObjectNumber, decline.RuleId, decline.Reason, decline.Category)))
                 continue;
             deduped.Add(p);
         }
@@ -1581,7 +1587,11 @@ internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         {
             SiblingShapeResult shape = ValidateSiblingShape(document, entry);
             if (shape.Reason is { } reason)
-                return DeclineAll(group, ruleId, MergeBlockedSibling(reason));
+            {
+                return DeclineAll(
+                    group, ruleId, MergeBlockedSibling(reason),
+                    FontDeclineCategory.MergeBlockedSibling);
+            }
 
             siblings.Add((entry, shape.Type0!, shape.Cid!));
         }
@@ -1909,8 +1919,9 @@ internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// regardless). Every OTHER decline site uses <see cref="DeclineGroupFact"/> instead (review
     /// round 2, finding 3) — see that method's doc comment for why the two must not be conflated.</summary>
     private static IReadOnlyList<FontProposal> DeclineAll(
-        IReadOnlyList<FontInventoryEntry> group, string ruleId, string reason) =>
-        group.Select(entry => (FontProposal)Decline(entry, ruleId, reason)).ToList();
+        IReadOnlyList<FontInventoryEntry> group, string ruleId, string reason,
+        FontDeclineCategory category = FontDeclineCategory.General) =>
+        group.Select(entry => (FontProposal)Decline(entry, ruleId, reason, category)).ToList();
 
     /// <summary>
     /// Declines every member of a group over a GROUP-LEVEL fact (no substitute installed, a
@@ -1939,13 +1950,20 @@ internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     private static IReadOnlyList<FontProposal> DeclineGroupFact(
         IReadOnlyList<FontInventoryEntry> group, string ruleId, string reason, IReadOnlySet<int> seedIds,
         bool widthFamily = false) =>
-        group.Select(entry => (FontProposal)Decline(
-                entry, ruleId,
-                seedIds.Contains(entry.Id.ObjectNumber) ? reason : MergeBlockedSibling(reason, widthFamily)))
+        group.Select(entry =>
+            {
+                bool isSeed = seedIds.Contains(entry.Id.ObjectNumber);
+                return (FontProposal)Decline(
+                    entry, ruleId,
+                    isSeed ? reason : MergeBlockedSibling(reason, widthFamily),
+                    isSeed ? FontDeclineCategory.General : FontDeclineCategory.MergeBlockedSibling);
+            })
             .ToList();
 
-    /// <summary>Verbatim per the controller brief (spec §6) — a later sweep's taxonomy keys on this
-    /// exact template, for the REPLACE family (<paramref name="widthFamily"/>: false, the default).
+    /// <summary>Human-facing wording from the controller brief (spec §6). Issue 50 replaced the
+    /// historical wording-based measurement contract with <see cref="FontDeclineCategory.MergeBlockedSibling"/>;
+    /// callers must set that category whenever this wrapper is used. The replace-family wording
+    /// (<paramref name="widthFamily"/>: false, the default) remains unchanged for users.
     /// Wraps a failing sibling's own would-be SINGLETON decline reason (e.g. what
     /// <see cref="ProposeProgramReplace"/> would have said about it alone) for the whole group's
     /// per-member decline.
@@ -2648,8 +2666,10 @@ internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         return new FontRequest(name, bold, italic);
     }
 
-    private static DeclineProposal Decline(FontInventoryEntry entry, string ruleId, string reason) =>
-        new(entry.Id, ruleId, reason);
+    private static DeclineProposal Decline(
+        FontInventoryEntry entry, string ruleId, string reason,
+        FontDeclineCategory category = FontDeclineCategory.General) =>
+        new(entry.Id, ruleId, reason, category);
 
     // Trailing dotted ISO clause, e.g. "6.2.11.5" out of "ISO 19005-2:2011, 6.2.11.5". Ported from
     // PdfLibrary.Tests' ParitySnapshot.ClauseKey (same regex, same behavior) rather than referenced:

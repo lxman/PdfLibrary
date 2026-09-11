@@ -293,6 +293,62 @@ public class PdfFontEncodingTests
         Assert.Equal((byte)149, enc.EncodeCharacter('\u2022'));
     }
 
+    [Theory]
+    [InlineData("WinAnsiEncoding")]
+    [InlineData("MacRomanEncoding")]
+    public void Name_assigned_ascii_codes_are_available_to_the_reverse_map(string encodingName)
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding(encodingName);
+
+        Assert.True(enc.CanEncode('A'));
+        Assert.Equal((byte)65, enc.EncodeCharacter('A'));
+        Assert.Equal(new byte[] { 65, 66, 67 }, enc.EncodeString("ABC"));
+    }
+
+    [Fact]
+    public void Name_derived_reverse_collisions_keep_the_first_code()
+    {
+        var enc = new PdfFontEncoding("TestEncoding");
+
+        enc.SetCharacterName(12, "bullet");
+        enc.SetCharacterName(34, "bullet");
+
+        Assert.Equal((byte)12, enc.EncodeCharacter('\u2022'));
+
+        enc.SetCharacterName(12, "A");
+
+        Assert.Equal((byte)34, enc.EncodeCharacter('\u2022'));
+        Assert.Equal((byte)12, enc.EncodeCharacter('A'));
+    }
+
+    [Fact]
+    public void Explicit_unicode_mapping_can_override_a_name_derived_preference()
+    {
+        var enc = new PdfFontEncoding("TestEncoding");
+        enc.SetCharacterName(12, "bullet");
+
+        enc.SetUnicode(34, "\u2022");
+
+        Assert.Equal((byte)34, enc.EncodeCharacter('\u2022'));
+    }
+
+    [Fact]
+    public void Differences_retires_the_base_characters_stale_reverse_mapping()
+    {
+        var differences = new PdfDictionary
+        {
+            [new PdfName("BaseEncoding")] = new PdfName("WinAnsiEncoding"),
+            [new PdfName("Differences")] = new PdfArray(new PdfInteger(65), new PdfName("Alpha")),
+        };
+
+        PdfFontEncoding enc = PdfFontEncoding.FromDictionary(differences);
+
+        Assert.False(enc.CanEncode('A'));
+        Assert.Null(enc.EncodeCharacter('A'));
+        Assert.Equal((byte)65, enc.EncodeCharacter('\u0391'));
+        Assert.Equal("\u0391", enc.DecodeCharacter(65));
+    }
+
     [Fact]
     public void WinAnsi_annex_d_vector_asserts_every_code_above_ascii()
     {

@@ -72,10 +72,32 @@ internal class PdfFontEncoding
         // guess for this code (e.g. /Differences applied on top of WinAnsi's reverse-AGL fallback).
         _derivedNameCodes.Remove(charCode);
 
-        // Also set Unicode if we can resolve it
+        // Also set Unicode if we can resolve it. Replacing a base-encoding entry through
+        // /Differences must first retire that code's old reverse mapping; otherwise EncodeCharacter
+        // can return a byte that DecodeCharacter now interprets as a different character.
         string? unicode = GlyphList.GetUnicode(charName);
+        if (!_codeToUnicode.TryGetValue(charCode, out string? previousUnicode)
+            || previousUnicode != unicode)
+        {
+            RemoveReverseMappingForCode(charCode);
+        }
+
         if (unicode is not null)
+        {
             _codeToUnicode[charCode] = unicode;
+
+            // Name-assigned mappings fill an otherwise-unmapped character but do not displace an
+            // existing preference. That makes collisions deterministic: the first name-derived
+            // code wins, while SetUnicode remains the explicit last-writer-wins mechanism factories
+            // can use to select a canonical byte (for example WinAnsi U+2022 -> 149 despite its
+            // six PDF-only bullet aliases).
+            if (unicode.Length == 1 && charCode is >= 0 and <= 255)
+                _unicodeToCode.TryAdd(unicode[0], (byte)charCode);
+        }
+        else
+        {
+            _codeToUnicode.Remove(charCode);
+        }
     }
 
     /// <summary>
@@ -83,6 +105,11 @@ internal class PdfFontEncoding
     /// </summary>
     public void SetUnicode(int charCode, string unicode)
     {
+        if (!_codeToUnicode.TryGetValue(charCode, out string? previousUnicode)
+            || previousUnicode != unicode)
+        {
+            RemoveReverseMappingForCode(charCode);
+        }
         _codeToUnicode[charCode] = unicode;
 
         // The renderer resolves embedded Type1/CFF charstrings BY NAME (ResolveGlyphId →
@@ -105,6 +132,39 @@ internal class PdfFontEncoding
         {
             _unicodeToCode[unicode[0]] = (byte)charCode;
         }
+    }
+
+    /// <summary>
+    /// Removes <paramref name="charCode"/> as the preferred byte for its current Unicode value. If
+    /// another byte still maps to that value, the lowest remaining code becomes the deterministic
+    /// fallback; an explicit later <see cref="SetUnicode"/> call can still override it.
+    /// </summary>
+    private void RemoveReverseMappingForCode(int charCode)
+    {
+        if (!_codeToUnicode.TryGetValue(charCode, out string? oldUnicode)
+            || oldUnicode.Length != 1
+            || !_unicodeToCode.TryGetValue(oldUnicode[0], out byte preferred)
+            || preferred != charCode)
+        {
+            return;
+        }
+
+        _unicodeToCode.Remove(oldUnicode[0]);
+
+        int fallback = int.MaxValue;
+        foreach ((int code, string mappedUnicode) in _codeToUnicode)
+        {
+            if (code != charCode
+                && code is >= 0 and <= 255
+                && mappedUnicode == oldUnicode
+                && code < fallback)
+            {
+                fallback = code;
+            }
+        }
+
+        if (fallback != int.MaxValue)
+            _unicodeToCode[oldUnicode[0]] = (byte)fallback;
     }
 
     /// <summary>

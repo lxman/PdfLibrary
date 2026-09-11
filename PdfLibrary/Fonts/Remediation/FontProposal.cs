@@ -6,6 +6,16 @@ namespace PdfLibrary.Fonts.Remediation;
 internal abstract record FontProposal(FontId Font, string RuleId);
 
 /// <summary>
+/// Stable machine-readable classification for a font decline. Human-facing <see cref="DeclineProposal.Reason"/>
+/// text may evolve; measurement and reporting code should classify on this value instead.
+/// </summary>
+internal enum FontDeclineCategory
+{
+    General,
+    MergeBlockedSibling,
+}
+
+/// <summary>
 /// Write a <c>/ToUnicode</c> CMap. <paramref name="Provable"/> holds mappings DERIVED from glyph
 /// names or a standard encoding — never inferred. <paramref name="NeedsUserInput"/> lists the codes
 /// with no honest answer, which the user supplies.
@@ -25,10 +35,15 @@ internal sealed record ToUnicodeProposal(
 /// <para>NOT the same as Pellucid's <c>DeclinedByDesign</c>, which is a position about a RULE that
 /// holds on every document. This is a fact about THIS font in THIS document on THIS machine — a
 /// direct dictionary, an unparseable program, a substitute that is not installed. Rendering them
-/// identically would let a machine-specific gap read as deliberate policy.</para>
+/// identically would let a machine-specific gap read as deliberate policy. <paramref name="Category"/>
+/// is the stable taxonomy key for measurement; callers must not infer it from <paramref name="Reason"/>
+/// wording.</para>
 /// </summary>
 internal sealed record DeclineProposal(
-    FontId Font, string RuleId, string Reason) : FontProposal(Font, RuleId);
+    FontId Font,
+    string RuleId,
+    string Reason,
+    FontDeclineCategory Category = FontDeclineCategory.General) : FontProposal(Font, RuleId);
 
 /// <summary>
 /// Embed <paramref name="Program"/> as <paramref name="Font"/>'s font program. <paramref name="Font"/>

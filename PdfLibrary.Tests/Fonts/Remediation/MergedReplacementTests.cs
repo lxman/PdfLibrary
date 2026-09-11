@@ -419,7 +419,9 @@ public sealed class MergedReplacementTests
             Assert.Single(result.Fonts.OfType<DeclineProposal>(), p => p.Font.ObjectNumber == 7);
 
         Assert.Equal(cid0OnlyDeclineReason, wrapper1Decline.Reason); // raw: true about the seed itself
+        Assert.Equal(FontDeclineCategory.General, wrapper1Decline.Category);
         Assert.NotEqual(cid0OnlyDeclineReason, wrapper2Decline.Reason); // wrapped, not raw
+        Assert.Equal(FontDeclineCategory.MergeBlockedSibling, wrapper2Decline.Category);
         Assert.Contains("cannot be included in a merged replacement", wrapper2Decline.Reason);
         Assert.Contains(cid0OnlyDeclineReason, wrapper2Decline.Reason);
     }

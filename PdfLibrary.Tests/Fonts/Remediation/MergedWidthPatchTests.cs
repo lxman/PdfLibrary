@@ -367,7 +367,9 @@ public sealed class MergedWidthPatchTests
         const string rawReason =
             "The font declares no /Widths array, so there is nothing to reconcile the program against.";
         Assert.Equal(rawReason, seedDecline.Reason);
+        Assert.Equal(FontDeclineCategory.General, seedDecline.Category);
         Assert.NotEqual(rawReason, siblingDecline.Reason);
+        Assert.Equal(FontDeclineCategory.MergeBlockedSibling, siblingDecline.Category);
         // Review fix M-1: the width family wraps a non-seed's fact in wording naming what a width
         // merge actually does (patching shared advances) rather than the replace family's "merged
         // replacement" template — a width-patch decline must not describe a whole-face swap it never
