@@ -91,11 +91,9 @@ namespace CcittCodec
             var rowCount = 0;
             int maxRows = _options.Height > 0 ? _options.Height : int.MaxValue;
 
-            // Skip initial EOL if present and required
-            if (_options.EndOfLine && _options.Group != CcittGroup.Group4)
-            {
-                SkipEolIfPresent(reader);
-            }
+            // Note: the initial EOL (and any Group 3 2D tag bit that follows it) is consumed
+            // inside the row loop, so row 0 goes through exactly the same path as every
+            // other row.
 
             while (rowCount < maxRows && !reader.IsAtEnd)
             {
@@ -108,6 +106,16 @@ namespace CcittCodec
 
                 byte[]? row = null;
 
+                // Re-synchronise on the line boundary. Group 3 encoders separate lines with
+                // fill + EOL whether or not /DecodeParms admits it (Alabama's scans declare
+                // nothing yet carry 2,206 EOLs), and consuming it here -- rather than inside
+                // the row decoders -- keeps every Group 3 path aligned through one code path.
+                var consumedEol = false;
+                if (_options.Group != CcittGroup.Group4)
+                {
+                    consumedEol = SkipEolIfPresent(reader);
+                }
+
                 switch (_options.Group)
                 {
                     case CcittGroup.Group3OneDimensional:
@@ -118,7 +126,13 @@ namespace CcittCodec
                         // In Group 3 2D, EOL is followed by a tag bit
                         // 1 = 1D encoded line, 0 = 2D encoded line
                         var is1D = true;
-                        if (rowCount > 0 && _options.K > 0)
+                        if (consumedEol)
+                        {
+                            // The tag bit is authoritative; prefer it over inferring the
+                            // pattern from K, which assumes the encoder never deviates.
+                            is1D = reader.ReadBit() == 1;
+                        }
+                        else if (rowCount > 0 && _options.K > 0)
                         {
                             // Check if this should be a 2D line
                             // Every K lines, one is 1D, the rest are 2D
@@ -232,12 +246,9 @@ namespace CcittCodec
                 isWhite = !isWhite;
             }
 
-            // Check for EOL if required
-            if (_options.EndOfLine)
-            {
-                SkipEolIfPresent(reader);
-            }
-
+            // EOL handling deliberately lives in the row loop, not here: this method is also
+            // used for the 1D lines of a Group 3 2D stream, where the EOL is followed by a
+            // tag bit that only the caller knows how to interpret.
             return row;
         }
 
@@ -781,31 +792,46 @@ namespace CcittCodec
         /// <summary>
         /// Skips EOL pattern if present.
         /// </summary>
-        private void SkipEolIfPresent(CcittBitReader reader)
+        /// <summary>
+        /// Consumes an end-of-line sequence -- optional T.4 fill bits followed by the
+        /// 12-bit EOL code -- if one is present, and returns whether it did.
+        /// </summary>
+        /// <remarks>
+        /// Two things here are load-bearing.
+        ///
+        /// Fill is unbounded. ITU-T T.4 §4.1.2 lets an encoder insert any number of 0 bits
+        /// before an EOL, typically to byte-align the next line. The previous version gave up
+        /// after 12 zeros AND returned without restoring the reader, so a line carrying even
+        /// one fill bit silently desynchronised the bit stream and every subsequent code
+        /// decoded as garbage. Alabama's scans use 6 fill bits per line, which truncated a
+        /// 2200-row page to 2 rows with no error raised.
+        ///
+        /// A long zero run is unambiguous. No white or black run code contains 11 consecutive
+        /// zeros, so scanning ahead costs nothing when no EOL is present -- the reader is put
+        /// back exactly where it started.
+        /// </remarks>
+        private bool SkipEolIfPresent(CcittBitReader reader)
         {
-            // Look for 11+ zeros followed by a 1
             int startPos = reader.Position;
             var zeros = 0;
 
-            while (!reader.IsAtEnd && zeros < 12)
+            while (!reader.IsAtEnd)
             {
                 int bit = reader.ReadBit();
                 if (bit == 0)
                 {
                     zeros++;
+                    continue;
                 }
-                else if (bit == 1 && zeros >= 11)
-                {
-                    // Found EOL
-                    return;
-                }
-                else
-                {
-                    // Not an EOL - restore position
-                    reader.Seek(startPos);
-                    return;
-                }
+
+                if (zeros >= CcittConstants.EolBits - 1)
+                    return true;
+
+                break;
             }
+
+            reader.Seek(startPos);
+            return false;
         }
 
         /// <summary>
