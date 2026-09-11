@@ -47,16 +47,12 @@ jobs:
       run: |
         dotnet restore PdfLibrary/PdfLibrary.csproj
         dotnet restore PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj
-        dotnet restore PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj
         dotnet restore PdfLibrary.Tests/PdfLibrary.Tests.csproj
 
     - name: Build
       run: |
         dotnet build PdfLibrary/PdfLibrary.csproj --configuration Release --no-restore
         dotnet build PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj --configuration Release --no-restore
-        # SkiaSharp backend is not published (sunset) but is still built — the pixel-fidelity
-        # render tests rasterize through it.
-        dotnet build PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-restore
         dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
 
     - name: Run tests

@@ -29,13 +29,11 @@ jobs:
     - name: Restore dependencies
       run: |
         dotnet restore PdfLibrary/PdfLibrary.csproj
-        dotnet restore PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj
         dotnet restore PdfLibrary.Tests/PdfLibrary.Tests.csproj
 
     - name: Build
       run: |
         dotnet build PdfLibrary/PdfLibrary.csproj --configuration Release --no-restore
-        dotnet build PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-restore
         dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
 
     - name: Run tests
