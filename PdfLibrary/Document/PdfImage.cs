@@ -170,43 +170,51 @@ public class PdfImage
     internal PdfStream Stream => _stream;
 
     /// <summary>
+    /// Reads an integer entry from the image dictionary, resolving an indirect reference.
+    /// </summary>
+    /// <remarks>
+    /// ISO 32000-1:2008 section 7.3.10 permits *any* dictionary value to be an indirect
+    /// reference, and real files use that latitude on entries most readers assume are
+    /// direct. One scanner in the wild writes <c>/Width 5008</c> as a literal but
+    /// <c>/Height 56 0 R</c> as a reference in the same dictionary.
+    ///
+    /// Matching on <see cref="PdfInteger"/> alone silently yields the fallback in that
+    /// case, and for <c>/Height</c> the fallback is 0 — which decodes zero rows and
+    /// renders a blank white page rather than throwing. The failure therefore survives
+    /// all the way into a text-extraction pipeline as a page that looks legitimately
+    /// empty. Resolve first, then match.
+    /// </remarks>
+    private int GetDictionaryInt(string key, int fallback)
+    {
+        if (!_stream.Dictionary.TryGetValue(new PdfName(key), out PdfObject? obj))
+            return fallback;
+
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+
+        return obj switch
+        {
+            PdfInteger i => i.Value,
+            // Tolerated because some producers emit whole numbers as reals.
+            PdfReal r when Math.Abs(r.Value % 1) < double.Epsilon => (int)r.Value,
+            _ => fallback
+        };
+    }
+
+    /// <summary>
     /// Gets the image width in pixels
     /// </summary>
-    public int Width
-    {
-        get
-        {
-            if (_stream.Dictionary.TryGetValue(new PdfName("Width"), out PdfObject obj) && obj is PdfInteger width)
-                return width.Value;
-            return 0;
-        }
-    }
+    public int Width => GetDictionaryInt("Width", 0);
 
     /// <summary>
     /// Gets the image height in pixels
     /// </summary>
-    public int Height
-    {
-        get
-        {
-            if (_stream.Dictionary.TryGetValue(new PdfName("Height"), out PdfObject obj) && obj is PdfInteger height)
-                return height.Value;
-            return 0;
-        }
-    }
+    public int Height => GetDictionaryInt("Height", 0);
 
     /// <summary>
     /// Gets the number of bits per color component (typically 1, 2, 4, 8, or 16)
     /// </summary>
-    public int BitsPerComponent
-    {
-        get
-        {
-            if (_stream.Dictionary.TryGetValue(new PdfName("BitsPerComponent"), out PdfObject obj) && obj is PdfInteger bits)
-                return bits.Value;
-            return 8; // Default per PDF spec
-        }
-    }
+    public int BitsPerComponent => GetDictionaryInt("BitsPerComponent", 8); // Default per PDF spec
 
     /// <summary>
     /// Gets the color space name (DeviceGray, DeviceRGB, DeviceCMYK, etc.)
