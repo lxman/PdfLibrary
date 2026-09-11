@@ -6,7 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.6.3] - 2026-09-11
+
 ### Fixed
+- **Scanned pages no longer decode to a blank raster when an image XObject's `/Width`, `/Height`
+  or `/BitsPerComponent` is an indirect reference.** ISO 32000-1 §7.3.10 permits any dictionary
+  value to be indirect, and producers do mix the two — one scanner writes `/Width 5008` as a
+  literal alongside `/Height 56 0 R` in the same dictionary. PdfLibrary matched on a direct integer
+  only and fell through to a zero fallback, producing a correctly-sized but empty image and a blank
+  white page with no exception raised.
+- **Group 3 `CCITTFaxDecode` streams now resynchronise on fill bits and EOL codes regardless of
+  `/DecodeParms`.** Encoders routinely emit an EOL on every line, each preceded by ITU-T T.4 §4.1.2
+  fill bits to byte-align the next line, while declaring neither. Two defects compounded: the EOL
+  skip ran only when `/EndOfLine` was declared, and it abandoned the scan after 12 zero bits
+  *without restoring the reader*, so a single fill bit desynchronised the remainder of the stream.
+  A 2200-row page decoded to 2 rows and rendered blank. EOL handling now runs unconditionally for
+  every Group 3 path — no run-length code contains 11 consecutive zeros, so the look-ahead is free
+  when no EOL is present — and Group 3 2D consumes the tag bit that follows an EOL in preference to
+  inferring the 1D/2D pattern from `K`.
 - Font-program preflight and remediation inventory now include character codes drawn in annotation
   `/N`, `/D`, and `/R` appearance streams, including named-state appearances. AP-only `.notdef`,
   glyph-presence, width, and ToUnicode defects are no longer suppressed as if their fonts were unused.

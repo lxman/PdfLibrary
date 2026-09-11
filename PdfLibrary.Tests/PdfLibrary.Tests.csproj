@@ -38,6 +38,9 @@
              privately (PrivateAssets=all), so they no longer flow transitively. -->
         <ProjectReference Include="..\FontParser\FontParser.csproj" />
         <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
+    <!-- Test-only: CcittFaxDecodeFilterTests builds its Group 3 fixtures from the decoder's own
+         Huffman tables. The filter itself reaches CcittCodec through PdfLibrary. -->
+    <ProjectReference Include="..\ImageLibrary\CcittCodec\CcittCodec.csproj" />
         <ProjectReference Include="..\ICCSharp\ICCSharp.csproj" />
         <ProjectReference Include="..\tools\DocFilter\DocFilter.csproj" />
     </ItemGroup>

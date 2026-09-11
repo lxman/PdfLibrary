@@ -8,11 +8,11 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary</PackageId>
         <Title>PdfLibrary</Title>
-        <Version>2.6.2</Version>
+        <Version>2.6.3</Version>
         <Authors>Michael Jordan</Authors>
         <Description>A comprehensive .NET library for parsing, rendering, creating, editing, optimizing, and validating PDF documents. Pure C# implementation with no native or third-party codec dependencies; cross-platform on .NET 8, 9, and 10. Supports PDF 1.x and 2.0, and includes a read-only conformance preflight for PDF/A (2b/2u/3b), PDF/X-4, and PDF/UA-1.</Description>
         <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;pdf-editor;document;csharp;cross-platform;pure-csharp;managed;pdf2.0;pdfa;pdfx;pdf-ua;conformance;preflight;validation;accessibility</PackageTags>
-        <PackageReleaseNotes>2.6.2 preserves font state across page content arrays and Form XObjects so Type0 /ToUnicode mappings remain active, and replaces undecodable U+0000 output with U+FFFD. See CHANGELOG.md.</PackageReleaseNotes>
+        <PackageReleaseNotes>2.6.3 fixes two defects that made scanned pages decode to a blank raster and render as a white page with no error: indirect /Width, /Height and /BitsPerComponent on image XObjects are now resolved, and Group 3 CCITTFaxDecode streams resynchronise on fill bits and EOL codes whether or not /DecodeParms declares EndOfLine. See CHANGELOG.md.</PackageReleaseNotes>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
         <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>
