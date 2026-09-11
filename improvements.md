@@ -2,7 +2,7 @@
 
 Working notes on issues, gaps, and refactor opportunities. Scoped to in-house code. All runtime image-codec dependencies are now in-tree.
 
-Project size (in-house): ~96K LOC. Top-level: PdfLibrary, PdfLibrary.Rendering.SkiaSharp, PdfLibrary.Tests, PdfLibrary.Integration, PdfLibrary.Wpf.Viewer, PdfLibrary.Utilities/ImageUtility, PdfLibrary.Examples/*, ImageLibrary (per-codec subprojects: BmpCodec, CcittCodec, GifCodec, Jbig2Decoder, Jp2Codec, JpegCodec, LzwCodec, PbmCodec, PngCodec, TgaCodec, TiffCodec), FontParser, Logging.
+Top-level components: PdfLibrary, PdfLibrary.Tests, PdfLibrary.Integration, PdfLibrary.Rendering.Svg, PdfLibrary.Rendering.Wpf, PdfLibrary.Wpf.Viewer, PdfLibrary.Utilities/ImageUtility, PdfLibrary.Examples/*, ImageLibrary (per-codec subprojects: BmpCodec, CcittCodec, GifCodec, Jbig2Decoder, Jp2Codec, JpegCodec, LzwCodec, PbmCodec, PngCodec, TgaCodec, TiffCodec), FontParser, and Logging.
 
 ---
 
@@ -13,7 +13,6 @@ Project size (in-house): ~96K LOC. Top-level: PdfLibrary, PdfLibrary.Rendering.S
 Vendored `JpegLibrary/` submodule has been removed. The in-house `ImageLibrary/JpegCodec` (baseline + progressive, encode + decode) replaces it and is integrated directly at:
 
 - `PdfLibrary/Filters/DctDecodeFilter.cs` — `/DCTDecode` (no wrapper layer, JBIG2 pattern)
-- `PdfLibrary.Rendering.SkiaSharp/Rendering/ImageRenderer.cs` — manual JPEG decode fallback
 - `ImageLibrary/TiffCodec/TiffDecoder.cs` — TIFF JPEG sub-format
 
 The `JpegLibraryAdapter` wrapper has also been deleted. Test coverage lives in `ImageLibrary/JpegCodec.Tests/`.
@@ -59,7 +58,6 @@ The four silent catch-alls flagged in the original sweep have been mostly addres
 | File | Status |
 |---|---|
 | `PdfLibrary/Document/PdfPage.cs:364` | ✓ Logs `LogCategory.Images`: "Skipped malformed image XObject: {type}: {message}" |
-| `PdfLibrary.Rendering.SkiaSharp/Rendering/ImageRenderer.cs:194` | ✓ Logs `LogCategory.Images`: "Manual JP2/JPEG decode failed, falling back: {type}: {message}" |
 | `PdfLibrary/Filters/Jbig2DecodeFilter.cs` | ✓ Narrowed catch to `NullReferenceException`/`IndexOutOfRangeException` only (other exceptions now propagate as `InvalidOperationException`); logs failures with stream length + exception type |
 | `FontParser/Tables/Cmap/CmapTable.cs:97` | ⚠ Still bare `catch (Exception)`. Would require `FontParser` to take a project reference on `Logging` (currently doesn't); architectural call rather than mechanical fix. |
 
@@ -84,7 +82,6 @@ Listed in priority order. Each fights you on every change to the affected area. 
 | `PdfLibrary/Fonts/Type1Font.cs` | 1,328 | Already self-contained; consider extracting `Type1CharStringInterpreter` |
 | `PdfLibrary/Fonts/Embedded/EmbeddedFontMetrics.cs` | 1,203 | Static metrics tables — could be data files (JSON/binary) loaded at startup |
 | `ImageLibrary/TiffCodec/TiffDecoder.cs` | 1,120 | Per-compression strategy classes (LZW, CCITT, JPEG already separate libraries) |
-| `PdfLibrary.Rendering.SkiaSharp/Rendering/TextRenderer.cs` | 1,003 | Glyph extraction vs. layout vs. paint |
 | `FontParser/Tables/Cff/CharStringParser.cs` | 1,013 | OK as-is given CFF spec complexity, but `CFF2` extension belongs in a sibling file |
 
 ---

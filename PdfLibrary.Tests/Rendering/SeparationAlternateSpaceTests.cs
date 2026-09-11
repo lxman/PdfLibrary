@@ -1,4 +1,3 @@
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -29,10 +28,10 @@ public class SeparationAlternateSpaceTests
     private static void AssertSamePixel(string colorSpaceDef, string viaSeparation, string direct,
         string clause, params string[] extraObjects)
     {
-        SKColor actual = ColourConformancePage.RenderCentre(
+        RecordedColor actual = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(colorSpaceDef, ColourConformancePage.FillRect(viaSeparation),
                 withFont: false, extraObjects: extraObjects));
-        SKColor expected = ColourConformancePage.RenderCentre(
+        RecordedColor expected = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build("/DeviceRGB", ColourConformancePage.FillRect(direct)));
 
         Assert.True(actual == expected,
@@ -85,12 +84,12 @@ public class SeparationAlternateSpaceTests
         string cs = $"[/Separation /PANTONE#20185#20C /DeviceCMYK " +
                     $"{ColourConformancePage.ExponentialTint("0 0 0 0", "0 1 0 0")}]";
 
-        SKColor light = ColourConformancePage.RenderCentre(
+        RecordedColor light = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(cs, ColourConformancePage.FillRect("/Cs0 cs 0 scn")));
-        SKColor dark = ColourConformancePage.RenderCentre(
+        RecordedColor dark = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(cs, ColourConformancePage.FillRect("/Cs0 cs 1 scn")));
 
-        static int Luma(SKColor c) => (299 * c.Red + 587 * c.Green + 114 * c.Blue) / 1000;
+        static int Luma(RecordedColor c) => (299 * c.Red + 587 * c.Green + 114 * c.Blue) / 1000;
 
         Assert.True(Luma(light) > Luma(dark),
             $"§8.6.6.4 row 4-3: tint 0 gave luma {Luma(light)} and tint 1 gave {Luma(dark)}; tints are " +

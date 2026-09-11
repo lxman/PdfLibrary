@@ -1,4 +1,3 @@
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -31,7 +30,7 @@ public class SeparationAllImageTests
         byte[] pdf = ColourConformancePage.Build("/DeviceRGB", content, withFont: false,
             extraResources: " /XObject << /Im0 5 0 R >>", extraObjects: img);
 
-        SKColor c = ColourConformancePage.RenderCentre(pdf);
+        RecordedColor c = ColourConformancePage.RenderCentre(pdf);
 
         Assert.True(c.Red < 20 && c.Green < 20 && c.Blue < 20,
             $"/All image at tint 1 painted RGB({c.Red},{c.Green},{c.Blue}); §8.6.6.4 requires the tint " +

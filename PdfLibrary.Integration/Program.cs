@@ -3,10 +3,10 @@ using PdfLibrary.Integration.Documents;
 
 // Configuration
 const string baseDir = @"C:\Users\jorda\RiderProjects\PDF\TestPDFs\targeted_custom_generated";
-const string goldenDir = "golden";      // Subdirectory for golden PDFs and images
+const string goldenDir = "golden";      // Subdirectory for golden PDFs and SVG renders
 const string testDir = "test";          // Subdirectory for test outputs
-const double renderScale = 2.0;         // 144 DPI for better comparison
-const double matchThreshold = 95.0;     // Minimum % match to pass (allows for antialiasing differences)
+const double renderScale = 2.0;
+const double matchThreshold = 100.0;    // SVG output is deterministic and compared exactly
 
 // Parse command line
 string mode = args.Length > 0 ? args[0].ToLower() : "help";
@@ -68,12 +68,12 @@ static void PrintHelp()
     Console.WriteLine("Usage: PdfLibrary.Integration <command>");
     Console.WriteLine();
     Console.WriteLine("Commands:");
-    Console.WriteLine("  baseline  - Generate golden baseline PDFs and images");
-    Console.WriteLine("              Creates PDFs and renders them to images.");
+    Console.WriteLine("  baseline  - Generate golden baseline PDFs and SVG images");
+    Console.WriteLine("              Creates PDFs and renders them through the supported SVG target.");
     Console.WriteLine("              Manually verify these look correct before committing.");
     Console.WriteLine();
     Console.WriteLine("  test      - Run tests comparing current rendering against baseline");
-    Console.WriteLine("              Regenerates PDFs, renders them, and compares to golden images.");
+    Console.WriteLine("              Regenerates PDFs, renders them, and compares exact SVG output.");
     Console.WriteLine("              Generates an HTML report with results.");
     Console.WriteLine();
     Console.WriteLine("  generate  - Generate PDFs only (legacy mode)");
@@ -109,18 +109,18 @@ static int GenerateBaseline(ITestDocument[] documents, string baseDir, string go
             Console.WriteLine($"    PDF: {pdfPath}");
 
             // Detect number of pages in the generated PDF
-            int pageCount = PdfImageRenderer.GetPageCount(pdfPath);
+            int pageCount = PdfSvgRenderer.GetPageCount(pdfPath);
             Console.WriteLine($"    Pages: {pageCount}");
 
             // Render each page to a separate image
             for (var pageNum = 1; pageNum <= pageCount; pageNum++)
             {
                 string imagePath = pageCount > 1
-                    ? Path.Combine(outputDir, $"{doc.Name}_Page{pageNum}_golden.png")
-                    : Path.Combine(outputDir, $"{doc.Name}_golden.png");
+                    ? Path.Combine(outputDir, $"{doc.Name}_Page{pageNum}_golden.svg")
+                    : Path.Combine(outputDir, $"{doc.Name}_golden.svg");
 
-                PdfImageRenderer.RenderToImage(pdfPath, imagePath, scale, pageNum);
-                Console.WriteLine($"    Image (Page {pageNum}): {imagePath}");
+                PdfSvgRenderer.RenderToSvg(pdfPath, imagePath, scale, pageNum);
+                Console.WriteLine($"    SVG (Page {pageNum}): {imagePath}");
             }
 
             success++;
@@ -137,7 +137,7 @@ static int GenerateBaseline(ITestDocument[] documents, string baseDir, string go
     Console.WriteLine("==========================");
     Console.WriteLine($"Generated: {success}, Failed: {failed}");
     Console.WriteLine();
-    Console.WriteLine("IMPORTANT: Manually verify these images look correct before committing!");
+    Console.WriteLine("IMPORTANT: Manually verify these SVG images look correct before committing!");
     Console.WriteLine("Use Adobe Acrobat or another PDF viewer to check the PDFs.");
 
     return failed > 0 ? 1 : 0;
@@ -172,7 +172,7 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
             doc.Generate(testPdfPath);
 
             // Detect number of pages
-            int pageCount = PdfImageRenderer.GetPageCount(testPdfPath);
+            int pageCount = PdfSvgRenderer.GetPageCount(testPdfPath);
 
             // Test each page
             var allPagesPassed = true;
@@ -182,9 +182,8 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
             for (var pageNum = 1; pageNum <= pageCount; pageNum++)
             {
                 string pageSuffix = pageCount > 1 ? $"_Page{pageNum}" : "";
-                string goldenImagePath = Path.Combine(goldenPath, $"{doc.Name}{pageSuffix}_golden.png");
-                string testImagePath = Path.Combine(testPath, $"{doc.Name}{pageSuffix}_actual.png");
-                string diffImagePath = Path.Combine(testPath, $"{doc.Name}{pageSuffix}_diff.png");
+                string goldenImagePath = Path.Combine(goldenPath, $"{doc.Name}{pageSuffix}_golden.svg");
+                string testImagePath = Path.Combine(testPath, $"{doc.Name}{pageSuffix}_actual.svg");
 
                 // Check golden baseline exists
                 if (!File.Exists(goldenImagePath))
@@ -196,10 +195,9 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
                 }
 
                 // Render test image
-                PdfImageRenderer.RenderToImage(testPdfPath, testImagePath, scale, pageNum);
+                PdfSvgRenderer.RenderToSvg(testPdfPath, testImagePath, scale, pageNum);
 
-                // Compare images
-                ComparisonResult comparison = ImageComparer.Compare(goldenImagePath, testImagePath, diffImagePath);
+                ComparisonResult comparison = SvgComparer.Compare(goldenImagePath, testImagePath);
 
                 if (!comparison.Success)
                 {
@@ -212,9 +210,6 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
                     Console.WriteLine($"    Page {pageNum}: PASS ({comparison.MatchPercentage:F2}% match)");
                     totalMatchPercentage += comparison.MatchPercentage;
 
-                    // Clean up diff image for passing tests
-                    if (File.Exists(diffImagePath))
-                        File.Delete(diffImagePath);
                 }
                 else
                 {
@@ -225,7 +220,7 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
                 }
 
                 // Copy golden image to test dir for report
-                string goldenCopy = Path.Combine(testPath, $"{doc.Name}{pageSuffix}_golden.png");
+                string goldenCopy = Path.Combine(testPath, $"{doc.Name}{pageSuffix}_golden.svg");
                 File.Copy(goldenImagePath, goldenCopy, overwrite: true);
             }
 

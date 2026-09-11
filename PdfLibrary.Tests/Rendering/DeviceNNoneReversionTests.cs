@@ -1,4 +1,3 @@
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -32,13 +31,13 @@ public class DeviceNNoneReversionTests
                           "stream\r\n{ 0 3 1 roll 0 }\r\nendstream";
         const string cs = "[/DeviceN [/SpotA /None] /DeviceCMYK 5 0 R]";
 
-        SKColor viaDeviceN = ColourConformancePage.RenderCentre(
+        RecordedColor viaDeviceN = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(cs, ColourConformancePage.FillRect("/Cs0 cs 0.25 0.75 scn"),
                 withFont: false, extraResources: "", extraObjects: ps));
 
         // The oracle: the same colour painted directly in the alternate space. If the /None component
         // (0.75) reached the transform, the yellow plate is 0.75 and the two must be identical.
-        SKColor direct = ColourConformancePage.RenderCentre(
+        RecordedColor direct = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build("/DeviceRGB", ColourConformancePage.FillRect("0 0.25 0.75 0 k")));
 
         Assert.True(viaDeviceN == direct,

@@ -1,4 +1,3 @@
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -127,7 +126,7 @@ public class SeparationSpecialColorantTests
     {
         byte[] pdf = ColourConformancePage.Build($"[/Separation /All /DeviceRGB {RgbTint("1 0 0")}]", FillRect(1.0));
 
-        SKColor c = ColourConformancePage.RenderCentre(pdf);
+        RecordedColor c = ColourConformancePage.RenderCentre(pdf);
 
         Assert.True(c.Red < 20 && c.Green < 20 && c.Blue < 20,
             $"/All at tint 1 painted RGB({c.Red},{c.Green},{c.Blue}); §8.6.6.4 requires the complement " +
@@ -144,7 +143,7 @@ public class SeparationSpecialColorantTests
     {
         byte[] pdf = ColourConformancePage.Build($"[/Separation /All /DeviceRGB {RgbTint("1 0 0")}]", FillRect(0.0));
 
-        SKColor c = ColourConformancePage.RenderCentre(pdf);
+        RecordedColor c = ColourConformancePage.RenderCentre(pdf);
 
         Assert.True(c.Red > 235 && c.Green > 235 && c.Blue > 235,
             $"/All at tint 0 painted RGB({c.Red},{c.Green},{c.Blue}); the complement of 0 is full " +

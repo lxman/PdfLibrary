@@ -1,4 +1,3 @@
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -28,7 +27,7 @@ public class InitialColorValueTests
     /// <summary>Sets a contrasting red, then selects /Cs0 and fills WITHOUT any sc/scn operator.</summary>
     private const string RedThenSelectCs0 = "1 0 0 rg /Cs0 cs 100 400 200 200 re f";
 
-    private static void AssertBlack(SKColor c, string what) =>
+    private static void AssertBlack(RecordedColor c, string what) =>
         Assert.True(c.Red < 25 && c.Green < 25 && c.Blue < 25,
             $"{what} painted RGB({c.Red},{c.Green},{c.Blue}); expected near-black. A red result means " +
             "the previous colour carried over instead of the space's initial value being applied.");
@@ -44,7 +43,7 @@ public class InitialColorValueTests
         const string cs = "[/Separation /Spot /DeviceRGB " +
                           "<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0 0 0] /N 1 >>]";
 
-        SKColor c = ColourConformancePage.RenderCentre(
+        RecordedColor c = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(cs, RedThenSelectCs0));
 
         AssertBlack(c, "/Separation with no scn");
@@ -72,7 +71,7 @@ public class InitialColorValueTests
                           "stream\r\n{ 0 3 1 roll 0 }\r\nendstream";
         const string cs = "[/DeviceN [/SpotA /SpotB] /DeviceCMYK 5 0 R]";
 
-        SKColor c = ColourConformancePage.RenderCentre(
+        RecordedColor c = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(cs, "0 0 1 rg /Cs0 cs 100 400 200 200 re f", withFont: false,
                 extraResources: "", extraObjects: ps));
 
@@ -90,7 +89,7 @@ public class InitialColorValueTests
     [Fact]
     public void DeviceCmyk_WithoutScn_UsesBlackNotWhite()
     {
-        SKColor c = ColourConformancePage.RenderCentre(
+        RecordedColor c = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build("/DeviceRGB",
                 "1 0 0 rg /DeviceCMYK cs 100 400 200 200 re f"));
 
@@ -101,7 +100,7 @@ public class InitialColorValueTests
     [Fact]
     public void DeviceRgb_WithoutScn_UsesBlack()
     {
-        SKColor c = ColourConformancePage.RenderCentre(
+        RecordedColor c = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build("/DeviceRGB",
                 "1 0 0 rg /DeviceRGB cs 100 400 200 200 re f"));
 
@@ -123,7 +122,7 @@ public class InitialColorValueTests
     public void Lab_WithoutScn_ClampsAToDeclaredRange()
     {
         const string cs = "[/Lab << /Range [20 80 -50 50] >>]";
-        SKColor c = ColourConformancePage.RenderCentre(
+        RecordedColor c = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(cs, RedThenSelectCs0));
 
         Assert.True(Math.Abs(c.Red - 33) <= 10 && Math.Abs(c.Green - 0) <= 10 && Math.Abs(c.Blue - 1) <= 10,
@@ -147,7 +146,7 @@ public class InitialColorValueTests
     {
         const string icc = "<< /N 4 /Range [0.3 1 0 1 0 1 0 1] /Length 0 >>\r\nstream\r\n\r\nendstream";
         const string cs = "[/ICCBased 5 0 R]";
-        SKColor c = ColourConformancePage.RenderCentre(
+        RecordedColor c = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(cs, RedThenSelectCs0, withFont: false, extraResources: "", extraObjects: icc));
 
         Assert.True(Math.Abs(c.Red - 178) <= 10 && c.Green > 245 && c.Blue > 245,
@@ -166,7 +165,7 @@ public class InitialColorValueTests
     [Fact]
     public void Pattern_without_scn_carries_over_previous_colour_G11Baseline()
     {
-        SKColor c = ColourConformancePage.RenderCentre(
+        RecordedColor c = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build("/DeviceRGB", "1 0 0 rg /Pattern cs 100 400 200 200 re f"));
 
         Assert.True(c.Red > 235 && c.Green < 20 && c.Blue < 20,

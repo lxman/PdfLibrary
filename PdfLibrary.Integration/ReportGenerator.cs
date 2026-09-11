@@ -66,7 +66,7 @@ public static class ReportGenerator
             html.AppendLine("<div class='images'>");
 
             // Golden image
-            var goldenImg = $"{result.Name}_golden.png";
+            var goldenImg = $"{result.Name}_golden.svg";
             if (File.Exists(Path.Combine(imageDir, goldenImg)))
             {
                 html.AppendLine("<div class='image-box'>");
@@ -76,26 +76,13 @@ public static class ReportGenerator
             }
 
             // Actual image
-            var actualImg = $"{result.Name}_actual.png";
+            var actualImg = $"{result.Name}_actual.svg";
             if (File.Exists(Path.Combine(imageDir, actualImg)))
             {
                 html.AppendLine("<div class='image-box'>");
                 html.AppendLine($"<img src='{actualImg}' alt='Actual' />");
                 html.AppendLine("<p>Actual (Current)</p>");
                 html.AppendLine("</div>");
-            }
-
-            // Diff image (only show for failures)
-            if (!result.Passed)
-            {
-                var diffImg = $"{result.Name}_diff.png";
-                if (File.Exists(Path.Combine(imageDir, diffImg)))
-                {
-                    html.AppendLine("<div class='image-box'>");
-                    html.AppendLine($"<img src='{diffImg}' alt='Difference' />");
-                    html.AppendLine("<p>Difference</p>");
-                    html.AppendLine("</div>");
-                }
             }
 
             html.AppendLine("</div>"); // images

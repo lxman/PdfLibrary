@@ -5,9 +5,8 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Editing;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Rendering.Svg;
 using PdfLibrary.Structure;
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Editing;
 
@@ -258,8 +257,6 @@ public class ExplicitResourceRepairTests
 
     private static byte[] RenderPixels(PdfPage page)
     {
-        using SKImage image = page.RenderTo().ToImage();
-        using SKBitmap bitmap = SKBitmap.FromImage(image);
-        return bitmap.Bytes;
+        return Encoding.UTF8.GetBytes(page.RenderToSvg());
     }
 }

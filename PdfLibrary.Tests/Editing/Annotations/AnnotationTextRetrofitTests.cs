@@ -4,9 +4,8 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Editing;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Tests.Rendering;
 using PdfLibrary.Structure;
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Editing.Annotations;
 
@@ -98,48 +97,13 @@ public class AnnotationTextRetrofitTests
     /// <summary>Number of disjoint horizontal bands (separated by ≥1 blank row) that contain ink in the rect.</summary>
     private static int InkRowBands(byte[] pdf, PdfRect rect)
     {
-        using var ms = new MemoryStream(pdf);
-        using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
-        int h = bmp.Height;
-        int x0 = Math.Max(0, (int)rect.Left - 1), x1 = Math.Min(bmp.Width, (int)rect.Right + 1);
-        int y0 = Math.Max(0, (int)(h - rect.Top) - 1), y1 = Math.Min(h, (int)(h - rect.Bottom) + 1);
-        int bands = 0; bool inBand = false;
-        for (int y = y0; y < y1; y++)
-        {
-            bool rowHasInk = false;
-            for (int x = x0; x < x1; x++)
-            {
-                SKColor c = bmp.GetPixel(x, y);
-                if (c.Alpha > 0 && (c.Red != 255 || c.Green != 255 || c.Blue != 255)) { rowHasInk = true; break; }
-            }
-            if (rowHasInk && !inBand) { bands++; inBand = true; }
-            else if (!rowHasInk) inBand = false;
-        }
-        return bands;
+        return RecordedPageProbe.InkRowBands(pdf, rect.Left - 1, rect.Bottom - 1, rect.Right + 1, rect.Top + 1);
     }
 
     private static int RenderNonWhiteInRect(byte[] pdf, PdfRect rect)
     {
-        using var ms = new MemoryStream(pdf);
-        using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
-
-        int h = bmp.Height;
-        int x0 = Math.Max(0, (int)rect.Left - 1), x1 = Math.Min(bmp.Width, (int)rect.Right + 1);
-        int y0 = Math.Max(0, (int)(h - rect.Top) - 1), y1 = Math.Min(h, (int)(h - rect.Bottom) + 1);
-        int count = 0;
-        for (int y = y0; y < y1; y++)
-        for (int x = x0; x < x1; x++)
-        {
-            SKColor c = bmp.GetPixel(x, y);
-            if (c.Alpha > 0 && (c.Red != 255 || c.Green != 255 || c.Blue != 255)) count++;
-        }
-        return count;
+        return RecordedPageProbe.CountPaintCommandsInRect(pdf,
+            rect.Left - 1, rect.Bottom - 1, rect.Right + 1, rect.Top + 1);
     }
 
     [Fact]

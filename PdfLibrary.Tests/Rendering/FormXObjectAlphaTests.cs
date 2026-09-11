@@ -1,7 +1,6 @@
 using PdfLibrary.Document;
 using PdfLibrary.Structure;
-using PdfLibrary.Rendering.SkiaSharp;
-using SkiaSharp;
+using PdfLibrary.Rendering;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -55,18 +54,13 @@ public class FormXObjectAlphaTests
     {
         using var ms = new MemoryStream(BuildPdf());
         using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
+        PageDrawList list = RecordedPageProbe.Record(doc.GetPage(0)!);
+        FillCommand fill = Assert.Single(list.Commands.OfType<FillCommand>());
 
-        // Rect is page-space [100..300] x [400..600] → bitmap y = 792 - pdfY. Sample the centre.
-        SKColor c = bmp.GetPixel(200, 792 - 500);
-        // The page renders on an opaque white background, so a black fill drawn under /ca 0.5
-        // composites to mid-grey (~128). Without alpha inheritance the form would paint full-opacity
-        // black (~0); with no fill the pixel would stay white (~255). Assert mid-grey — that IS the fix.
-        Assert.InRange((int)c.Red, 96, 160);
-        Assert.InRange((int)c.Green, 96, 160);
-        Assert.InRange((int)c.Blue, 96, 160);
-        Assert.Equal(255, c.Alpha);
+        // The backend-neutral command must retain the caller's /ca 0.5. A consumer then composites
+        // the black fill over its page background; losing inheritance here made every backend opaque.
+        Assert.Equal(0.5, fill.State.FillAlpha, 6);
+        Assert.Equal("DeviceRGB", fill.State.ResolvedFillColorSpace);
+        Assert.Equal([0.0, 0.0, 0.0], fill.State.ResolvedFillColor);
     }
 }

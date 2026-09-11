@@ -1,7 +1,6 @@
 using PdfLibrary.Document;
 using PdfLibrary.Structure;
-using PdfLibrary.Rendering.SkiaSharp;
-using SkiaSharp;
+using PdfLibrary.Rendering;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -58,16 +57,16 @@ public class ShadingPatternFillTests
     {
         using var ms = new MemoryStream(BuildPdf());
         using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
+        PageDrawList list = RecordedPageProbe.Record(doc.GetPage(0)!);
+        ShadingPatternFillCommand command = Assert.Single(list.Commands.OfType<ShadingPatternFillCommand>());
 
-        // Near the left edge of the gradient the colour is red; near the right, blue. bitmap y = 200 - pdfY.
-        SKColor left  = bmp.GetPixel(35, 200 - 100);
-        SKColor right = bmp.GetPixel(165, 200 - 100);
-
-        // Without the fix both stay white (255,255,255). With it: left is red-dominant, right blue-dominant.
-        Assert.True(left.Red > 150 && left.Blue < 120,  $"left={left}");
-        Assert.True(right.Blue > 150 && right.Red < 120, $"right={right}");
+        // The core contract now proves the shading dictionary reached the backend with its axial
+        // geometry and colour ramp intact. Raster interpolation belongs to each supported backend.
+        Assert.Equal(2, command.Shading.ShadingType);
+        Assert.Equal([20f, 100f, 180f, 100f], command.Shading.Coords);
+        Assert.True(command.Shading.ExtendStart);
+        Assert.True(command.Shading.ExtendEnd);
+        Assert.True(command.Shading.Colors.First() is 0xFFFF0000u);
+        Assert.True(command.Shading.Colors.Last() is 0xFF0000FFu);
     }
 }

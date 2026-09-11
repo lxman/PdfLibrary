@@ -4,9 +4,8 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Editing;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Tests.Rendering;
 using PdfLibrary.Structure;
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Editing.Annotations;
 
@@ -53,18 +52,6 @@ public class AnnotationSquareSliceTests
             return apDict.Get(new PdfName("N")) is not null;
         }
         return false;
-    }
-
-    private static int CountNonWhite(SKBitmap bmp, int x0, int y0, int x1, int y1)
-    {
-        int count = 0;
-        for (int y = y0; y < y1; y++)
-        for (int x = x0; x < x1; x++)
-        {
-            SKColor c = bmp.GetPixel(x, y);
-            if (c.Alpha > 0 && (c.Red != 255 || c.Green != 255 || c.Blue != 255)) count++;
-        }
-        return count;
     }
 
     [Fact]
@@ -136,19 +123,10 @@ public class AnnotationSquareSliceTests
 
         using var ms2 = new MemoryStream(saved);
         using PdfDocument doc = PdfDocument.Load(ms2);
-        PdfPage page = doc.GetPage(0)!;
-
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
-
-        int h = bmp.Height; // page height in points at scale 1
-        int bx0 = 100 + 4, bx1 = 300 - 4;
-        int by0 = (h - 700) + 4, by1 = (h - 600) - 4;
-
-        int drawn = CountNonWhite(bmp, bx0, by0, bx1, by1);
+        int drawn = RecordedPageProbe.CountPaintCommandsInRect(
+            RecordedPageProbe.Record(doc.GetPage(0)!), 104, 604, 296, 696);
         Assert.True(drawn > 0,
-            $"Square appearance did not render: no non-white pixels in rect region " +
-            $"x=[{bx0},{bx1}) y=[{by0},{by1}) of {bmp.Width}x{bmp.Height}.");
+            "Square appearance emitted no paint command in its annotation rectangle.");
     }
 
     [Fact]

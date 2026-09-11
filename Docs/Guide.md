@@ -41,7 +41,7 @@ dotnet add package Lxman.PdfLibrary.Rendering.Wpf    # WPF render target (Window
 
 `Lxman.PdfLibrary` is pure managed C# with no native dependencies and no SkiaSharp reference — it targets .NET 8, 9, and 10. `Lxman.PdfLibrary.Rendering.Wpf` adds a WPF `DrawingGroup`-based render target (Windows-only; requires an STA thread for rendering). Both target .NET 8, 9, and 10.
 
-> **Note:** `Lxman.PdfLibrary.Rendering.SkiaSharp` is **not published** in 2.0. It remains in-repo as a pixel-fidelity test gate. To render without WPF, implement `IRenderTarget` from `PdfLibrary.Rendering`; the in-repo `SvgRenderTarget` and `SkiaSharpRenderTarget` are reference implementations.
+> **Note:** `Lxman.PdfLibrary.Rendering.SkiaSharp` was retired after 1.1.0 and removed from the repository. To render without WPF, use the in-repo `SvgRenderTarget` or implement `IRenderTarget` from `PdfLibrary.Rendering`; `RecordingRenderTarget` provides a renderer-neutral command list suitable for application adapters.
 
 ## The big picture
 
@@ -200,7 +200,7 @@ var target = new MyRenderTarget();
 page.Render(target, pageNumber: 1, scale: 1.0);
 ```
 
-The in-repo `SvgRenderTarget` and `SkiaSharpRenderTarget` are worked examples. See [`Docs/RendererSpi.md`](RendererSpi.md) for the full coordinate contract.
+The in-repo `SvgRenderTarget` is the complete worked example, and `RecordingRenderTarget` provides a renderer-neutral command list for adapters. See [`Docs/RendererSpi.md`](RendererSpi.md) for the full coordinate contract.
 
 ---
 
@@ -679,7 +679,7 @@ catch (PdfException) { /* malformed or otherwise invalid PDF */ }
 
 PdfLibrary supports **concurrent rendering using the one-document-per-thread model** — the standard pattern for ASP.NET Core and other multi-threaded servers. Each request loads its own `PdfDocument`, renders on its own render target, and disposes both. The process-wide caches shared across renders (glyph-path cache, font/typeface resolver, ICC profiles, codec registry) are synchronized. Do **not** share a single `PdfDocument` or editor across threads. Do **not** share an `IRenderTarget` implementation across threads — render targets hold per-render mutable state.
 
-> **WPF note:** `WpfRenderTarget` and `page.RenderToDrawing` must be called on an STA thread. In ASP.NET Core, dispatch each render to a dedicated STA thread pool, or use the SVG/SkiaSharp (in-repo) targets for headless server scenarios.
+> **WPF note:** `WpfRenderTarget` and `page.RenderToDrawing` must be called on an STA thread. In ASP.NET Core, dispatch each render to a dedicated STA thread pool, use the SVG target for headless vector output, or adapt `RecordingRenderTarget` to the raster backend used by the application.
 
 ---
 

@@ -1,4 +1,3 @@
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -41,7 +40,7 @@ public class ColourGapBaselineTests
         byte[] pdf = ColourConformancePage.Build("/DeviceRGB", content, withFont: false,
             extraResources: " /Pattern << /P1 5 0 R >>", pattern, shading, shadingFn, tint);
 
-        SKColor c = ColourConformancePage.RenderCentre(pdf);
+        RecordedColor c = ColourConformancePage.RenderCentre(pdf);
         // MEASURED (not the predicted constant black): the shading route paints white, not the
         // tint transform's C0/C1 black. Corrected 2026-07-29 per Task 2's STOP rule — a
         // non-black paint that still covers the red backdrop is a measurement correction, not a
@@ -95,7 +94,7 @@ public class ColourGapBaselineTests
             $"[/Separation /Spot /DeviceRGB {ColourConformancePage.ExponentialTint("1 1 1", "0 0 0")}]",
             content, withFont: false, extraResources: " /XObject << /Im0 5 0 R >>", img);
 
-        SKColor c = ColourConformancePage.RenderCentre(pdf);
+        RecordedColor c = ColourConformancePage.RenderCentre(pdf);
         Assert.True(c.Red < 25 && c.Green < 25 && c.Blue < 25,
             $"stencil after bare cs painted RGB({c.Red},{c.Green},{c.Blue}); expected the initial " +
             "tint 1.0 = black. Red means the stencil did not pick up the initial colour a fill gets.");

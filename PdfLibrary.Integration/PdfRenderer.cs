@@ -1,13 +1,13 @@
 using PdfLibrary.Document;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Rendering.Svg;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Integration;
 
 /// <summary>
-/// Renders PDF files to images using PdfLibrary
+/// Renders PDF files to standalone SVG images using PdfLibrary's supported renderer-neutral target.
 /// </summary>
-public static class PdfImageRenderer
+public static class PdfSvgRenderer
 {
     /// <summary>
     /// Gets the number of pages in a PDF file
@@ -22,13 +22,13 @@ public static class PdfImageRenderer
     }
 
     /// <summary>
-    /// Renders a PDF page to a PNG file
+    /// Renders a PDF page to an SVG file.
     /// </summary>
     /// <param name="pdfPath">Path to the PDF file</param>
-    /// <param name="outputPath">Path to save the output PNG</param>
+    /// <param name="outputPath">Path to save the output SVG</param>
     /// <param name="scale">Scale factor (1.0 = 72 DPI)</param>
     /// <param name="pageNumber">1-based page number</param>
-    public static void RenderToImage(string pdfPath, string outputPath, double scale = 1.0, int pageNumber = 1)
+    public static void RenderToSvg(string pdfPath, string outputPath, double scale = 1.0, int pageNumber = 1)
     {
         using FileStream stream = File.OpenRead(pdfPath);
         PdfDocument document = PdfDocument.Load(stream);
@@ -37,13 +37,6 @@ public static class PdfImageRenderer
         PdfPage page = document.GetPage(pageIndex)
             ?? throw new InvalidOperationException($"Page {pageNumber} not found in {pdfPath}");
 
-        PdfRectangle cropBox = page.GetCropBox();
-        var width = (int)(cropBox.Width * scale);
-        var height = (int)(cropBox.Height * scale);
-
-        // Use the public PdfPage.Render() API
-        using var renderTarget = new SkiaSharpRenderTarget(width, height, document);
-        page.Render(renderTarget, pageNumber, scale);
-        renderTarget.SaveToFile(outputPath);
+        File.WriteAllText(outputPath, page.RenderToSvg(scale));
     }
 }

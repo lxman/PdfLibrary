@@ -27,7 +27,7 @@ public sealed class RecordingRenderTarget : IRenderTarget
     private readonly ProofCmykResolver _proofResolver;
     private readonly IccColorConverter _iccConverter;
 
-    // Soft-mask lifecycle (mirrors PdfLibrary.Rendering.SkiaSharp SoftMaskManager): a mask set via
+    // Soft-mask lifecycle: a mask set via
     // RenderSoftMask stays active until its owning save-scope exits (Q) or it is cleared to /None
     // (OnGraphicsStateChanged). The engine driver never calls ClearSoftMask, so the matching pop
     // MUST be emitted here — otherwise the replayed SaveLayers go unbalanced and corrupt the stack.
@@ -59,7 +59,7 @@ public sealed class RecordingRenderTarget : IRenderTarget
     /// instead of the default <see cref="SystemFontLocator.Default"/>. This is the public seam a
     /// consuming app (e.g. Pellucid) uses to inject its own font source into rendering — the render
     /// entry points a caller actually reaches (<see cref="Record(PdfPage, double)"/> and the
-    /// Skia/Avalonia extension methods built on it) previously had no way to supply one; only
+    /// consumer render adapters built on it) previously had no way to supply one; only
     /// <c>PdfRenderer</c>'s internal constructor and <c>PdfPage</c>'s internal <c>Render</c> overload
     /// could. Passing <c>null</c> reproduces exactly the behaviour of the two-argument overload above.
     /// </summary>

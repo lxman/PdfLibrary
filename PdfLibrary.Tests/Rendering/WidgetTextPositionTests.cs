@@ -1,7 +1,5 @@
 using PdfLibrary.Document;
 using PdfLibrary.Structure;
-using PdfLibrary.Rendering.SkiaSharp;
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -65,20 +63,6 @@ public class WidgetTextPositionTests
         return ms.ToArray();
     }
 
-    private static int NonWhiteOpaque(SKBitmap b, int x0, int y0, int x1, int y1)
-    {
-        int n = 0;
-        x0 = Math.Max(0, x0); y0 = Math.Max(0, y0);
-        x1 = Math.Min(b.Width, x1); y1 = Math.Min(b.Height, y1);
-        for (int y = y0; y < y1; y++)
-        for (int x = x0; x < x1; x++)
-        {
-            SKColor c = b.GetPixel(x, y);
-            if (c.Alpha > 0 && (c.Red != 255 || c.Green != 255 || c.Blue != 255)) n++;
-        }
-        return n;
-    }
-
     // Two text widgets at different rects. Regression guard for the CTM-accumulation bug: without
     // restoring the renderer CurrentState.Ctm per annotation, the SECOND widget inherits the first's
     // translate and drifts off its rect. Both must render in their own rect.
@@ -128,13 +112,10 @@ public class WidgetTextPositionTests
     {
         using var ms = new MemoryStream(BuildTwoTextWidgetPdf());
         using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
+        var list = RecordedPageProbe.Record(doc.GetPage(0)!);
 
-        // Widget A rect [200 600 400 640] → bitmap y [152,192]; Widget B rect [200 300 400 340] → y [452,492].
-        int inA = NonWhiteOpaque(bmp, 200, (int)(PageH - 640), 400, (int)(PageH - 600));
-        int inB = NonWhiteOpaque(bmp, 200, (int)(PageH - 340), 400, (int)(PageH - 300));
+        int inA = RecordedPageProbe.CountPaintCommandsInRect(list, 200, 600, 400, 640);
+        int inB = RecordedPageProbe.CountPaintCommandsInRect(list, 200, 300, 400, 340);
         Assert.True(inA > 0, $"Widget A text missing from its rect (count={inA}).");
         Assert.True(inB > 0, $"Widget B text missing from its rect (count={inB}) — CTM accumulation regression.");
     }
@@ -145,23 +126,16 @@ public class WidgetTextPositionTests
         byte[] pdf = BuildTextWidgetPdf();
         using var ms = new MemoryStream(pdf);
         using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
+        var list = RecordedPageProbe.Record(doc.GetPage(0)!);
+        int inRect = RecordedPageProbe.CountPaintCommandsInRect(list, Llx, Lly, Urx, Ury);
 
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
-
-        // Rect region in bitmap coords: bitmapY = pageH - pdfY
-        int rectTop = (int)(PageH - Ury);    // 346
-        int rectBot = (int)(PageH - Lly);    // 446
-        int inRect = NonWhiteOpaque(bmp, Llx, rectTop, Urx, rectBot);
-
-        // Bottom strip (where a missing rect-translation would dump the text: pdf y≈44 → bitmap y≈748)
-        int bottomStrip = NonWhiteOpaque(bmp, 0, (int)PageH - 60, (int)PageW, (int)PageH);
+        // Page-space bottom strip where a missing rect translation would dump the text.
+        int bottomStrip = RecordedPageProbe.CountPaintCommandsInRect(list, 0, 0, PageW, 60);
 
         // Diagnostic output regardless of pass/fail
         Assert.True(inRect > 0,
             $"DIAGNOSIS: widget text did NOT render in the rect region (count={inRect}); " +
             $"bottom-strip count={bottomStrip}. If bottom-strip>0 and inRect==0, the rect-translation " +
-            $"is not applied to text appearances (real renderer bug). Image {bmp.Width}x{bmp.Height}.");
+            $"is not applied to text appearances (real renderer bug).");
     }
 }

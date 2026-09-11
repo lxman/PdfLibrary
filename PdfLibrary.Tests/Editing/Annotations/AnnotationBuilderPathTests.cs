@@ -4,9 +4,8 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Editing;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Tests.Rendering;
 using PdfLibrary.Structure;
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Editing.Annotations;
 
@@ -112,18 +111,8 @@ public class AnnotationBuilderPathTests
 
         using var ms = new MemoryStream(pdf);
         using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
-
-        int h = bmp.Height;
-        int count = 0;
-        for (int y = (h - 700) + 4; y < (h - 600) - 4; y++)
-        for (int x = 104; x < 296; x++)
-        {
-            SKColor c = bmp.GetPixel(x, y);
-            if (c.Alpha > 0 && (c.Red != 255 || c.Green != 255 || c.Blue != 255)) count++;
-        }
+        int count = RecordedPageProbe.CountPaintCommandsInRect(
+            RecordedPageProbe.Record(doc.GetPage(0)!), 104, 604, 296, 696);
         Assert.True(count > 0, "Builder Square did not render");
     }
 }

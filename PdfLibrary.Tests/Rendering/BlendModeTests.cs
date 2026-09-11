@@ -12,9 +12,8 @@ namespace PdfLibrary.Tests.Rendering;
 /// at the unit test level. They verify that operations process without errors and that
 /// the pipeline correctly handles paths, colors, and graphics state management.
 ///
-/// For actual pixel-level blend mode verification (checking that Multiply produces the
-/// correct colors, etc.), see integration tests with actual SkiaSharp rendering and
-/// comparison against mutool reference images.
+/// Actual pixel-level blend-mode verification (for example, checking the composited result
+/// of Multiply) belongs in a downstream raster-target conformance suite.
 /// </summary>
 public class BlendModeTests
 {
@@ -144,8 +143,8 @@ public class BlendModeTests
         // Validates that shapes render correctly over existing background
         // This tests the blend mode pipeline's ability to handle foreground/background composition
         //
-        // NOTE: Actual color verification (e.g., blend mode effects) requires integration tests
-        // with actual SkiaSharp rendering. This test validates the processing pipeline only.
+        // NOTE: Actual composited-color verification requires a raster-target conformance test.
+        // This test validates the processing pipeline only.
 
         // Arrange
         var mock = new MockRenderTarget();
@@ -386,10 +385,10 @@ public class BlendModeTests
     //
     // These unit tests validate the rendering pipeline operates correctly without errors.
     // To verify actual blend mode color results (e.g., that Multiply blend of blue over red
-    // produces black), integration tests should be added that:
+    // produces black), a raster-target conformance suite should:
     //
     // 1. Create test PDFs with specific blend mode scenarios
-    // 2. Render with PdfLibrary's SkiaSharp renderer
+    // 2. Render through the target under test
     // 3. Generate reference images with mutool
     // 4. Compare pixel-by-pixel (using PSNR or similar metrics)
     //

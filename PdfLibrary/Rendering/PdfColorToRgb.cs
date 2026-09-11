@@ -4,7 +4,7 @@ namespace PdfLibrary.Rendering;
 
 /// <summary>
 /// SkiaSharp-free resolution of a PDF device-color component list to an RGB triple, for render
-/// targets. Mirrors the SkiaSharp ColorConverter math; Lab uses Wacton.Unicolour (a core dep).
+/// targets. Preserves the library's established color-conversion math; Lab uses Wacton.Unicolour.
 /// Public so third-party IRenderTarget authors (in other assemblies) can reuse it.
 /// </summary>
 public static class PdfColorToRgb

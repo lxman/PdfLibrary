@@ -13,15 +13,12 @@ namespace PdfLibrary.Tests.Rendering;
 /// to <see cref="ShadingDescriptor"/>, plus <see cref="PdfDocument.GetPageColorants"/> — all additive,
 /// none of it read by the render path. This locks in the claim for the fill/stroke path: a genuine
 /// <c>/Separation</c> fill, driven through the production <see cref="RecordingRenderTarget"/> (the exact
-/// recorder <c>PdfPage.RenderTo()</c>/SkiaSharp use), records the identical resolved colour that an
+/// recorder <c>RecordingRenderTarget.Record</c> use), records the identical resolved colour that an
 /// equivalent literal-DeviceCMYK control page records — whether or not
 /// <see cref="PdfLibrary.Content.PdfGraphicsState.ResolvedFillColorantOrigin"/> is populated alongside it.
 ///
-/// No golden-bitmap harness exists in this project for byte-exact rasterised pixels: the only
-/// render-to-bitmap coverage (<c>SkiaSharpRenderPipelineTests</c>) deliberately avoids byte-exact pixel
-/// comparison, and CI runs that pixel suite on ubuntu-latest only while this repo is developed on macOS —
-/// a pixel hash captured on one platform/SkiaSharp build is not guaranteed to reproduce on the other.
-/// Per the task brief's permitted substitute, this test instead asserts the strongest available
+/// No golden-bitmap harness exists in this project for byte-exact rasterised pixels because raster
+/// output is backend- and platform-dependent. This test instead asserts the strongest available
 /// deterministic invariant at the exact point SP-1 touches: the recorded <see cref="FillCommand"/>'s
 /// resolved colour space, resolved colour components, and path geometry are identical between the
 /// Separation page and its DeviceCMYK-equivalent control — i.e. ColorantOrigin's presence altered no
@@ -68,8 +65,8 @@ public class SpotPageByteIdentityTests
         // ONLY in whether ColorantOrigin is present, which is exactly the variable this test isolates.
         Assert.Null(controlFill.State.ResolvedFillColorantOrigin);
 
-        // The actual painted colour and geometry — everything a consumer (SkiaSharp, the CMYK
-        // compositor) reads off the command — are byte-identical either way. This is the non-regression
+        // The actual painted colour and geometry — everything a render-target consumer reads off the
+        // command — are byte-identical either way. This is the non-regression
         // proof: adding ColorantOrigin changed no rendered output.
         Assert.Equal(controlFill.State.ResolvedFillColorSpace, spotFill.State.ResolvedFillColorSpace);
         Assert.Equal(controlFill.State.ResolvedFillColor, spotFill.State.ResolvedFillColor);

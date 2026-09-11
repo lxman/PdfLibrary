@@ -1,7 +1,6 @@
 using PdfLibrary.Document;
 using PdfLibrary.Structure;
-using PdfLibrary.Rendering.SkiaSharp;
-using SkiaSharp;
+using PdfLibrary.Rendering;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -57,16 +56,12 @@ public class FormXObjectColorTests
     {
         using var ms = new MemoryStream(BuildPdf());
         using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
+        PageDrawList list = RecordedPageProbe.Record(doc.GetPage(0)!);
+        FillCommand fill = Assert.Single(list.Commands.OfType<FillCommand>());
 
-        // Rect is page-space [100..300] x [400..600] → bitmap y = 792 - pdfY. Sample the centre.
-        SKColor c = bmp.GetPixel(200, 792 - 500);
-        // The form fills with the page's inherited red. Without inheritance it would paint default
-        // black (~0,0,0); with no fill the pixel would stay white (~255,255,255). Assert red.
-        Assert.InRange((int)c.Red, 200, 255);
-        Assert.InRange((int)c.Green, 0, 60);
-        Assert.InRange((int)c.Blue, 0, 60);
+        // The renderer-neutral command carries the inherited red. Backends should not have to
+        // recover state that the PDF content interpreter discarded.
+        Assert.Equal("DeviceRGB", fill.State.ResolvedFillColorSpace);
+        Assert.Equal([1.0, 0.0, 0.0], fill.State.ResolvedFillColor);
     }
 }

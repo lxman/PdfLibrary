@@ -51,9 +51,7 @@ Run these on the release branch before creating the GitHub release. All four mus
 4. **Pellucid pin.** `ci/dependencies.json` in the Pellucid repo points at the exact commit that
    will be tagged, and Pellucid CI is green on it, before the tag exists. After publishing, bump
    `LxmanPdfLibraryVersion` in Pellucid's `Directory.Build.props` and confirm the package-path
-   canary job goes green; that is the last acceptance check.
-
-`PdfLibrary.Rendering.SkiaSharp` is **not published** — do not bump its version.
+    canary job goes green; that is the last acceptance check.
 
 ### 2. Create a GitHub Release
 
@@ -105,8 +103,6 @@ For pre-releases:
 ## Package Dependencies
 
 `Lxman.PdfLibrary.Rendering.Wpf` depends on `Lxman.PdfLibrary` with an exact version constraint. Both packages must always be released together with the same version number.
-
-`PdfLibrary.Rendering.SkiaSharp` is **not published**. It is an in-repo test project only; do not include it in the publish workflow.
 
 ## Troubleshooting
 

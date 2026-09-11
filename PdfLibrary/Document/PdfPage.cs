@@ -403,7 +403,7 @@ public class PdfPage
     /// Renders this page to the specified render target.
     /// This is the primary public API for rendering PDF pages.
     /// </summary>
-    /// <param name="target">The render target (e.g., SkiaSharpRenderTarget)</param>
+    /// <param name="target">The render target (for example WpfRenderTarget, SvgRenderTarget, or an application adapter)</param>
     /// <param name="pageNumber">1-based page number for display purposes</param>
     /// <param name="scale">Scale factor (1.0 = 100%, 2.0 = 200%)</param>
     public void Render(IRenderTarget target, int pageNumber = 1, double scale = 1.0)

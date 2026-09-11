@@ -1,17 +1,17 @@
 using PdfLibrary.Document;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Rendering.Svg;
 using PdfLibrary.Structure;
 
 // ==================== CONFIGURATION ====================
 const string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PdfLibrary.Examples\TestPdfs\showcase.pdf";
-const string outputPath = @"C:\Users\jorda\RiderProjects\PDF\PdfLibrary.Examples\TestPdfs\showcase_page1.png";
-const double scale = 2.0; // 2.0 = 144 DPI (higher quality)
+const string outputPath = @"C:\Users\jorda\RiderProjects\PDF\PdfLibrary.Examples\TestPdfs\showcase_page1.svg";
+const double scale = 2.0;
 const int pageNumber = 1; // 1-based page number
 
 Console.WriteLine("PDF to Image Renderer Example\n");
 Console.WriteLine($"Input PDF:  {pdfPath}");
-Console.WriteLine($"Output PNG: {outputPath}");
-Console.WriteLine($"Scale:      {scale}x (144 DPI)");
+Console.WriteLine($"Output SVG: {outputPath}");
+Console.WriteLine($"Scale:      {scale}x");
 Console.WriteLine($"Page:       {pageNumber}\n");
 
 // ==================== LOAD PDF DOCUMENT ====================
@@ -37,12 +37,11 @@ Console.WriteLine($"Output size:     {width} x {height} pixels\n");
 
 // ==================== RENDER PAGE ====================
 Console.WriteLine("Rendering page...");
-using var renderTarget = new SkiaSharpRenderTarget(width, height, document);
-page.Render(renderTarget, pageNumber, scale);
+string svg = page.RenderToSvg(scale);
 
 // ==================== SAVE TO FILE ====================
 Console.WriteLine("Saving to file...");
-renderTarget.SaveToFile(outputPath);
+File.WriteAllText(outputPath, svg);
 
 Console.WriteLine($"  ✓ Saved to {outputPath}\n");
 Console.WriteLine("Done!");

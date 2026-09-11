@@ -5,9 +5,9 @@ using PdfLibrary.Content;
 using PdfLibrary.Content.Operators;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Rendering.Svg;
 using PdfLibrary.Structure;
-using SkiaSharp;
+using System.Text;
 
 namespace PdfLibrary.Tests.Editing;
 
@@ -126,8 +126,7 @@ public sealed class InlineImageRepairCorpusTests
 
     private static byte[] RenderHash(PdfDocument document, int pageNumber)
     {
-        using SKImage image = document.GetPage(pageNumber - 1)!.RenderTo().ToImage();
-        using SKBitmap bitmap = SKBitmap.FromImage(image);
-        return SHA256.HashData(bitmap.Bytes);
+        string svg = document.GetPage(pageNumber - 1)!.RenderToSvg();
+        return SHA256.HashData(Encoding.UTF8.GetBytes(svg));
     }
 }

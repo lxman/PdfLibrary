@@ -1,7 +1,5 @@
 using PdfLibrary.Document;
-using PdfLibrary.Rendering.SkiaSharp;
 using PdfLibrary.Structure;
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -183,27 +181,6 @@ public class WidgetRenderTests
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// Count pixels in the given region of an SKBitmap that are opaque and non-white.
-    /// Transparent pixels (alpha == 0) are excluded — they are background, not drawn content.
-    /// Coordinates are in bitmap pixels (top-left origin).
-    /// </summary>
-    private static int CountOpaqueNonWhitePixelsInRegion(SKBitmap bitmap, int x0, int y0, int x1, int y1)
-    {
-        int count = 0;
-        for (int y = y0; y < y1; y++)
-        {
-            for (int x = x0; x < x1; x++)
-            {
-                SKColor c = bitmap.GetPixel(x, y);
-                // Only count pixels that are actually drawn (alpha > 0) and not white
-                if (c.Alpha > 0 && (c.Red != 255 || c.Green != 255 || c.Blue != 255))
-                    count++;
-            }
-        }
-        return count;
-    }
-
     [Fact]
     public void WidgetAnnotation_WithAppearanceStream_PixelsInsideRectAreNonWhite()
     {
@@ -212,31 +189,12 @@ public class WidgetRenderTests
 
         using var ms = new MemoryStream(pdfBytes);
         using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-
-        // Render at 1× (1 pt = 1 px at 72 DPI)
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        Assert.NotNull(image);
-        using SKBitmap bitmap = SKBitmap.FromImage(image);
-
-        // Widget rect in PDF coords (origin bottom-left):
-        //   llx=200 lly=346 urx=400 ury=446
-        // PDF Y → bitmap Y: bitmapY = pageHeight - pdfY
-        //   bitmap top of widget    = pageHeight - ury = 792 - 446 = 346
-        //   bitmap bottom of widget = pageHeight - lly = 792 - 346 = 446
-        int bx0 = (int)WidgetLlx + 2;        // small inset to avoid edge AA
-        int bx1 = (int)WidgetUrx - 2;
-        int by0 = (int)(PageHeight - WidgetUry) + 2;
-        int by1 = (int)(PageHeight - WidgetLly) - 2;
-
-        // The appearance stream paints solid red (1 0 0 rg), so drawn pixels will be opaque and non-white.
-        // Transparent pixels (alpha=0) are unrendered background — we exclude them.
-        int drawnNonWhite = CountOpaqueNonWhitePixelsInRegion(bitmap, bx0, by0, bx1, by1);
+        var list = RecordedPageProbe.Record(doc.GetPage(0)!);
+        int drawnNonWhite = RecordedPageProbe.CountPaintCommandsInRect(list,
+            WidgetLlx + 2, WidgetLly + 2, WidgetUrx - 2, WidgetUry - 2);
 
         Assert.True(drawnNonWhite > 0,
-            $"Widget appearance was not rendered: no opaque non-white pixels found in the widget region. " +
-            $"Widget rect (bitmap coords): x=[{bx0},{bx1}) y=[{by0},{by1}). " +
-            $"Image size: {bitmap.Width}×{bitmap.Height}. " +
+            $"Widget appearance emitted no paint command in [{WidgetLlx},{WidgetLly},{WidgetUrx},{WidgetUry}]. " +
             $"Expected red fill from appearance stream 'q 1 0 0 rg 0 0 200 100 re f Q'.");
     }
 
@@ -255,11 +213,10 @@ public class WidgetRenderTests
 
         using var ms = new MemoryStream(pdfBytes);
         using PdfDocument doc = PdfDocument.Load(ms);
-        using SKImage image = doc.GetPage(0)!.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bitmap = SKBitmap.FromImage(image);
+        var list = RecordedPageProbe.Record(doc.GetPage(0)!);
 
-        SKColor bottomRight = bitmap.GetPixel(350, (int)PageHeight - 325);
-        SKColor topLeft = bitmap.GetPixel(250, (int)PageHeight - 375);
+        RecordedColor bottomRight = RecordedPageProbe.ColorAt(list, 350, 325);
+        RecordedColor topLeft = RecordedPageProbe.ColorAt(list, 250, 375);
 
         Assert.True(bottomRight.Red > 200 && bottomRight.Green < 50 && bottomRight.Blue < 50,
             $"Expected the matrix-rotated appearance at bottom-right, got {bottomRight}.");

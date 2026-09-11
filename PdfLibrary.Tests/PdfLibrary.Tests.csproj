@@ -19,8 +19,6 @@
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <!-- Native assets for cross-platform CI testing -->
-        <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
     </ItemGroup>
 
     <ItemGroup>
@@ -33,7 +31,6 @@
              reference to it is PrivateAssets="all" so it does not flow transitively to this project,
              and the type forwarders in PdfLibrary only resolve at runtime, not compile time. -->
         <ProjectReference Include="..\Xmp\Xmp.csproj"/>
-        <ProjectReference Include="..\PdfLibrary.Rendering.SkiaSharp\PdfLibrary.Rendering.SkiaSharp.csproj"/>
         <ProjectReference Include="..\PdfLibrary.Rendering.Svg\PdfLibrary.Rendering.Svg.csproj"/>
         <ProjectReference Include="..\PdfLibrary.Integration\PdfLibrary.Integration.csproj" />
         <!-- Direct references: these tests use FontParser.Reader (BigEndianReaderTests) and

@@ -5,9 +5,8 @@ using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Editing;
 using PdfLibrary.Optimization;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Rendering.Svg;
 using PdfLibrary.Structure;
-using SkiaSharp;
 using Xunit;
 
 namespace PdfLibrary.Tests.Editing;
@@ -863,14 +862,12 @@ public sealed class AnnotationTypeRepairTests
         return ms.ToArray();
     }
 
-    /// <summary>Renders <paramref name="page"/> at native (72 DPI) scale and returns its raw pixel
-    /// bytes -- not a re-encoded format, to keep the comparison free of any encoder-level
-    /// nondeterminism (metadata, compression level) that a PNG round-trip could introduce.</summary>
+    /// <summary>Renders <paramref name="page"/> through the supported deterministic SVG target and
+    /// returns its UTF-8 bytes. This compares backend-neutral drawing output without image-encoder
+    /// metadata or rasterizer differences.</summary>
     private static byte[] RenderPixels(PdfPage page)
     {
-        using SKImage image = page.RenderTo().ToImage();
-        using SKBitmap bitmap = SKBitmap.FromImage(image);
-        return bitmap.Bytes;
+        return Encoding.UTF8.GetBytes(page.RenderToSvg());
     }
 
     [Fact]

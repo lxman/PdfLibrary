@@ -1,7 +1,5 @@
 using PdfLibrary.Document;
-using PdfLibrary.Rendering.SkiaSharp;
 using PdfLibrary.Structure;
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -96,33 +94,25 @@ internal static class ColourConformancePage
     public static string ExponentialTint(string c0, string c1) =>
         $"<< /FunctionType 2 /Domain [0 1] /C0 [{c0}] /C1 [{c1}] /N 1 >>";
 
-    /// <summary>Renders at 1:1 and returns the pixel at the centre of the test rectangle.</summary>
-    public static SKColor RenderCentre(byte[] pdf)
+    /// <summary>Records at 1:1 and returns the resolved colour at the centre of the test rectangle.</summary>
+    public static RecordedColor RenderCentre(byte[] pdf)
     {
-        using var ms = new MemoryStream(pdf);
-        using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
-        // Rect spans page-space x 100..300, y 400..600; bitmap rows are flipped (PageHeight − pdfY).
-        return bmp.GetPixel(200, PageHeight - 500);
+        return RecordedPageProbe.ColorAt(pdf, 200, 500);
     }
 
     /// <summary>
     /// Renders at 1:1 and invokes <paramref name="check"/> for every pixel well inside the test
     /// rectangle, inset by 5px so the rect's own edge antialiasing is not sampled.
     /// </summary>
-    public static void ForEachPixelInRect(byte[] pdf, Action<int, int, SKColor> check)
+    public static void ForEachPixelInRect(byte[] pdf, Action<int, int, RecordedColor> check)
     {
         using var ms = new MemoryStream(pdf);
         using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
+        var list = RecordedPageProbe.Record(doc.GetPage(0)!);
 
         for (var y = PageHeight - 595; y <= PageHeight - 405; y++)
             for (var x = 105; x <= 295; x++)
-                check(x, y, bmp.GetPixel(x, y));
+                check(x, y, RecordedPageProbe.ColorAt(list, x, PageHeight - y));
     }
 
     /// <summary>

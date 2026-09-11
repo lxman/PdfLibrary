@@ -1,4 +1,3 @@
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -53,7 +52,7 @@ public class SeparationTintRangeTests
     /// space that resolved to "paint nothing at all" leaves red visible instead of coincidentally
     /// matching an expected white or wrapped-overflow colour.
     /// </summary>
-    private static SKColor AtTint(string tint) => ColourConformancePage.RenderCentre(
+    private static RecordedColor AtTint(string tint) => ColourConformancePage.RenderCentre(
         ColourConformancePage.Build(Cs,
             ColourConformancePage.FillRect($"1 0 0 rg 100 400 200 200 re f /Cs0 cs {tint} scn")));
 
@@ -61,7 +60,7 @@ public class SeparationTintRangeTests
     /// <c>ColorConverter</c>'s naive (non-ICC) CMYK→RGB formula — <c>DeviceCMYK</c> has no ICC profile
     /// to convert through — whose <c>(byte)</c> truncation of a <c>* 255</c> multiply can be off by a
     /// few units at a non-integral tint, so exact byte equality isn't the right bar.</summary>
-    private static void AssertNear(SKColor c, byte r, byte g, byte b, string what) =>
+    private static void AssertNear(RecordedColor c, byte r, byte g, byte b, string what) =>
         Assert.True(Math.Abs(c.Red - r) <= 12 && Math.Abs(c.Green - g) <= 12 && Math.Abs(c.Blue - b) <= 12,
             $"{what}: got RGB({c.Red},{c.Green},{c.Blue}), expected near RGB({r},{g},{b})");
 
@@ -78,9 +77,9 @@ public class SeparationTintRangeTests
     [Fact]
     public void TintAboveOne_ClampsToOne()
     {
-        SKColor above = AtTint("1.5");
-        SKColor at = AtTint("1");
-        SKColor mid = AtTint("0.5");
+        RecordedColor above = AtTint("1.5");
+        RecordedColor at = AtTint("1");
+        RecordedColor mid = AtTint("0.5");
 
         // Equality alone is vacuous (see class doc): also pin the absolute colour tint 1 must
         // produce — C1 [0 1 0 0] is CMYK magenta, ≈ RGB(255,0,255).
@@ -96,8 +95,8 @@ public class SeparationTintRangeTests
     [Fact]
     public void TintBelowZero_ClampsToZero()
     {
-        SKColor below = AtTint("-0.5");
-        SKColor at = AtTint("0");
+        RecordedColor below = AtTint("-0.5");
+        RecordedColor at = AtTint("0");
 
         // Equality alone is vacuous (see class doc): also pin the absolute colour tint 0 must
         // produce — C0 [0 0 0 0] is no ink, which over the harness's blank page is white. The red

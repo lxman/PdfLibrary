@@ -99,7 +99,7 @@ DrawingImage pageImage = drawing.ToPageImage(geo.PixelWidth, geo.PixelHeight);
 // myImage.Source = pageImage;
 ```
 
-Not on Windows? Implement `IRenderTarget` (17 members) from `PdfLibrary.Rendering` and call `page.Render(myTarget, pageNumber: 1, scale: 1.0)` — the core hands you nothing but geometry (filled paths, images, clips), so any 2D drawing API works: Avalonia, Direct2D, SVG, and so on. The in-repo `SvgRenderTarget` and `SkiaSharpRenderTarget` are worked examples to crib from.
+Not on Windows? Implement `IRenderTarget` (17 members) from `PdfLibrary.Rendering` and call `page.Render(myTarget, pageNumber: 1, scale: 1.0)` — the core hands you nothing but geometry (filled paths, images, clips), so any 2D drawing API works: Avalonia, Direct2D, SVG, and so on. The in-repo `SvgRenderTarget` is the reference implementation, while `RecordingRenderTarget` is useful when adapting the command stream to another renderer.
 
 ### Edit an existing PDF
 
@@ -439,7 +439,6 @@ PDF/
 │   └── Security/                     # Encryption/decryption
 ├── PdfLibrary.Rendering.Wpf/         # WPF render target (published; Windows-only)
 ├── PdfLibrary.Rendering.Svg/         # SVG render target (reference implementation)
-├── PdfLibrary.Rendering.SkiaSharp/   # SkiaSharp render target (test-only; not published)
 ├── PdfLibrary.Tests/                 # Unit tests
 ├── PdfLibrary.Integration/           # Integration tests
 ├── PdfLibrary.Wpf.Viewer/            # WPF PDF viewer application
@@ -503,5 +502,4 @@ MIT — see the [LICENSE](LICENSE) file for details.
 - [Unicolour](https://github.com/waacton/Unicolour) — advanced color space handling and transformations
 
 ### Test-time references
-- [SkiaSharp](https://github.com/mono/SkiaSharp) — used only by the in-repo `PdfLibrary.Rendering.SkiaSharp` project as a pixel-fidelity test gate; not a runtime dependency of any published package
 - [Melville.CSJ2K](https://www.nuget.org/packages/Melville.CSJ2K) — used only by `ImageLibrary/Jp2Codec.Tests` as a differential reference for in-house JPEG 2000 conformance testing; not a runtime dependency of `PdfLibrary`

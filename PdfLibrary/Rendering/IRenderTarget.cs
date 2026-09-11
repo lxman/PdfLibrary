@@ -15,7 +15,7 @@ public readonly record struct TransparencyGroupInfo(
 
 /// <summary>
 /// Platform-agnostic rendering target for PDF content.
-/// Implementations provide platform-specific rendering (WPF, SkiaSharp, Avalonia).
+/// Implementations provide platform-specific rendering (for example WPF, SVG, or an application adapter).
 /// Enhanced with page lifecycle management for multipage rendering support.
 /// </summary>
 public interface IRenderTarget

@@ -28,7 +28,6 @@ This document describes the internal architecture of PdfLibrary, providing an ov
 │              Render Targets (separate projects)                  │
 │  Lxman.PdfLibrary.Rendering.Wpf  ← published (Windows-only)   │
 │  PdfLibrary.Rendering.Svg        ← in-repo reference impl      │
-│  PdfLibrary.Rendering.SkiaSharp  ← in-repo test gate only      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -284,7 +283,9 @@ DrawingGroup drawing = page.RenderToDrawing(scale: 1.5);
 |---------|--------|-------------|
 | `PdfLibrary.Rendering.Wpf` | **published** | WPF `DrawingGroup` target; `page.RenderToDrawing(scale)`. Windows-only, STA thread required. |
 | `PdfLibrary.Rendering.Svg` | in-repo | SVG file target; `page.RenderToSvg()`. Reference implementation for custom targets. |
-| `PdfLibrary.Rendering.SkiaSharp` | in-repo (test-only) | SkiaSharp 4.x raster target; pixel-fidelity gate for regression tests. Not published. |
+
+The retired `Lxman.PdfLibrary.Rendering.SkiaSharp` package was last released at 1.1.0. Its source and
+repository integrations have been removed; renderer implementations now consume the geometry-only SPI.
 
 #### Core text pipeline
 
@@ -589,9 +590,8 @@ class MyProcessor : PdfContentProcessor
 Render targets are interchangeable. Applications pass their chosen target to `PdfPage.Render()`:
 
 ```csharp
-IRenderTarget target = new SkiaSharpRenderTarget(width, height, document);
-// or a custom implementation
 IRenderTarget target = new SvgRenderTarget(...);
+// or a custom implementation backed by another 2D API
 
 page.Render(target, pageNumber, scale);
 ```
@@ -612,7 +612,7 @@ byte[] decoded = filter.Decode(encoded);
 PdfLibrary is built for **concurrent rendering using one document per thread** — the typical web-server model:
 
 - Load a separate `PdfDocument` per thread/request. A single instance is **not** safe to share: it lazy-loads objects by mutating internal state and seeking a shared `Stream`.
-- Use a separate render target per render. `SkiaSharpRenderTarget` wraps a single `SKCanvas`, which is not thread-safe.
+- Use a separate render target per render; targets hold mutable drawing and graphics-state data and are not safe to share.
 - `PdfDocumentBuilder` is **not thread-safe** during construction.
 
 Under that model the library is thread-safe. The process-wide state shared across renders is synchronized: the glyph-path cache (bounded `MemoryCache`, keyed per font instance), the system-font/typeface resolver, built-in ICC profiles and the Lab→sRGB transform (`volatile` double-checked locking), the codec registry (lock + snapshot-on-read), and font lookup tables (immutable). CFF/Type1 charstring decoding uses per-parse state rather than shared static stacks. Concurrent rendering of independent documents is validated by a stress harness that hash-compares concurrent output against a single-threaded baseline.
@@ -673,7 +673,6 @@ public class TextExtractorProcessor : PdfContentProcessor
 
 | Package | Usage |
 |---------|-------|
-| SkiaSharp | High-quality 2D graphics rendering (consumed by `PdfLibrary.Rendering.SkiaSharp`) |
 | Wacton.Unicolour | Color space transformations (CalGray/CalRGB/Lab/ICC) |
 | Serilog | Logging infrastructure |
 | Melville.CSJ2K | *Test-time only* — differential reference used by `ImageLibrary/Jp2Codec.Tests` for JPEG 2000 conformance; not referenced at runtime |
