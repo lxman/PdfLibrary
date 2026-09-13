@@ -839,7 +839,7 @@ endbfchar"));
     #region Font Information Tests
 
     [Fact]
-    public void GetTextFragments_WithFontInfo_IncludesFontName()
+    public void GetTextFragments_WithFontInfo_IncludesResourceAndBaseFontNames()
     {
         var content = @"
 BT
@@ -848,11 +848,24 @@ BT
 (Test) Tj
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
+        var resources = new PdfResources(new PdfDictionary
+        {
+            [new PdfName("Font")] = new PdfDictionary
+            {
+                [new PdfName("F1")] = new PdfDictionary
+                {
+                    [new PdfName("Type")] = new PdfName("Font"),
+                    [new PdfName("Subtype")] = new PdfName("Type1"),
+                    [new PdfName("BaseFont")] = new PdfName("Helvetica-Bold")
+                }
+            }
+        });
 
-        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes, resources);
 
         Assert.Single(fragments);
         Assert.Equal("F1", fragments[0].FontName);
+        Assert.Equal("Helvetica-Bold", fragments[0].BaseFontName);
     }
 
     [Fact]

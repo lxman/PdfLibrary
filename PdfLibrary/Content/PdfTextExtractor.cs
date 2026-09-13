@@ -272,6 +272,7 @@ internal class PdfTextExtractor : PdfContentProcessor
             Y = _cursor.Y,
             Mcid = CurrentMcid(),
             FontName = CurrentState.FontName,
+            BaseFontName = _currentFont?.BaseFont,
             FontSize = effectiveFontSize,  // Use effective (scaled) font size
             Width = advance,
             TextOffset = textOffset
@@ -459,6 +460,7 @@ internal class PdfTextExtractor : PdfContentProcessor
                 Y = mapped.Y,
                 Mcid = fragment.Mcid ?? CurrentMcid(),
                 FontName = fragment.FontName,
+                BaseFontName = fragment.BaseFontName,
                 FontSize = fragment.FontSize * vScale,
                 Width = fragment.Width * hScale,
                 TextOffset = baseOffset + fragment.TextOffset

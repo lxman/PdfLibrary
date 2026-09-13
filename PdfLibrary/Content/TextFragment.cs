@@ -8,7 +8,13 @@ public class TextFragment
     public string Text { get; init; } = string.Empty;
     public double X { get; init; }
     public double Y { get; init; }
+    /// <summary>The font resource key selected by the content stream (for example, <c>F1</c>).</summary>
     public string? FontName { get; init; }
+    /// <summary>
+    /// The resolved PDF <c>/BaseFont</c> name when the page resources contain the selected font.
+    /// Consumers that need typography should prefer this over <see cref="FontName"/>.
+    /// </summary>
+    public string? BaseFontName { get; init; }
     public double FontSize { get; init; }
 
     /// <summary>Total horizontal advance of this fragment in PDF text-space units (the same space
