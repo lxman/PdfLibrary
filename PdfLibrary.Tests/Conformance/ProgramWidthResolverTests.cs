@@ -97,7 +97,21 @@ public class ProgramWidthResolverTests
         var metrics = new EmbeddedFontMetrics(ZeroAdvanceSfntFixture.FontBytes()); // cmap maps code 10 -> gid 1
         Assert.Equal(1, metrics.GetGlyphIdByUnicode(10));
         Assert.Equal(0, metrics.GetGlyphIdByUnicode(0));
+        Assert.Equal(0, metrics.GetGlyphIdByUnicode(0xD800)); // surrogate is not a Unicode scalar
         Assert.Equal(0, metrics.GetGlyphIdByUnicode(0x10000)); // out of BMP: never truncate
+    }
+
+    [Fact]
+    public void GetGlyphIdByUnicode_transcodes_Unicode_for_a_MacRoman_only_cmap()
+    {
+        // U+00FC is byte FC in WinAnsi but byte 9F in MacRoman. The cmap key is 9F; a Unicode
+        // lookup must transcode rather than pass 00FC numerically into the legacy subtable.
+        var metrics = new EmbeddedFontMetrics(
+            ZeroAdvanceSfntFixture.MacRomanFontBytes(macCode: 0x9F));
+
+        Assert.Equal(0, metrics.GetGlyphId(0xFC));
+        Assert.Equal(1, metrics.GetGlyphId(0x9F));
+        Assert.Equal(1, metrics.GetGlyphIdByUnicode(0x00FC));
     }
 
     [Fact]
@@ -178,6 +192,42 @@ public class ProgramWidthResolverTests
         Assert.Equal(0, metrics.GetGlyphId(10));
         WidthComparison comparison = Assert.Single(
             ProgramWidthResolver.Simple(usage.Font, metrics, widths, [10], isTrueType: true));
+        Assert.Equal(1, comparison.Gid);
+        Assert.Equal(507, comparison.Declared);
+        Assert.Equal(450, comparison.Program);
+    }
+
+    [Fact]
+    public void A_WinAnsi_width_uses_the_glyph_from_a_MacRoman_only_cmap()
+    {
+        byte[] program = ZeroAdvanceSfntFixture.MacRomanFontBytes(macCode: 0x9F, gid1Advance: 450);
+        using var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(program.Length) }, program));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+MacOnly"),
+            [N("Flags")] = new PdfInteger(32),
+            [N("FontFile2")] = Ref(3),
+        });
+        var dictionary = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+MacOnly"),
+            [N("Encoding")] = N("WinAnsiEncoding"),
+            [N("FirstChar")] = new PdfInteger(0xFC),
+            [N("LastChar")] = new PdfInteger(0xFC),
+            [N("Widths")] = new PdfArray(new PdfInteger(507)),
+            [N("FontDescriptor")] = Ref(2),
+        };
+        var font = new TrueTypeFont(dictionary, doc);
+        EmbeddedFontMetrics metrics = font.GetEmbeddedMetrics()!;
+        var widths = (PdfArray)dictionary.Get("Widths")!;
+
+        WidthComparison comparison = Assert.Single(
+            ProgramWidthResolver.Simple(font, metrics, widths, [0xFC], isTrueType: true));
         Assert.Equal(1, comparison.Gid);
         Assert.Equal(507, comparison.Declared);
         Assert.Equal(450, comparison.Program);

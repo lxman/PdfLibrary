@@ -82,7 +82,6 @@ public class FontProgramWidthRepairCorpusTests
     [Theory]
     [InlineData("local", "PowerBASIC Compiler for Windows v10.0.pdf")]
     [InlineData("local", "PowerBASIC Console Compiler v6.0.pdf")]
-    [InlineData("ccmain", "0000_0000027.pdf")]
     public void Close_documents_lose_every_width_finding_and_keep_every_other_count(string corpus, string file)
     {
         string? root = corpus == "local" ? Corpus() : CcMainCorpus();
@@ -131,6 +130,25 @@ public class FontProgramWidthRepairCorpusTests
                 $"{file}: rule '{ruleId}' appeared ({afterCount}) after a width patch that should only " +
                 "have touched font-program 6.2.11.5 findings.");
         }
+    }
+
+    [Fact]
+    public void MacRoman_only_fonts_do_not_create_false_width_repairs()
+    {
+        string? root = CcMainCorpus();
+        Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
+
+        const string file = "0000_0000027.pdf";
+        string path = Path.Combine(root!, file);
+        (List<PatchWidthsProposal> patches, _, PreflightResult before, _) = ProposeFor(path);
+
+        // The Book Antiqua programs expose Macintosh/Roman cmaps. For example, PDF code 0x9F is
+        // /udieresis: its cmap key is MacRoman 0x9F, not numeric Unicode U+009F or U+00FC. The
+        // encoding-aware resolver selects the 603-unit glyph matching /Widths, so proposing a
+        // font-program patch here would recreate the old false positive.
+        Assert.DoesNotContain(before.Findings,
+            f => f.RuleId == "font-program" && ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
+        Assert.Empty(patches);
     }
 
     [Fact]

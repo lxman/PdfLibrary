@@ -71,8 +71,8 @@ internal static class ZeroAdvanceSfntFixture
         return b.ToArray();
     }
 
-    /// <summary>A lone (1,0) Mac-Roman format-6 subtable mapping code 10 → gid 1.</summary>
-    public static byte[] CmapMacFormat6()
+    /// <summary>A lone (1,0) Mac-Roman format-6 subtable mapping <paramref name="macCode"/> → gid 1.</summary>
+    public static byte[] CmapMacFormat6(ushort macCode = 10)
     {
         var b = new List<byte>();
         U16(b, 0);                     // table version
@@ -82,7 +82,7 @@ internal static class ZeroAdvanceSfntFixture
         U16(b, 6);                     // format 6
         U16(b, 12);                    // length (5 × u16 header + 1 × u16 entry)
         U16(b, 0);                     // language
-        U16(b, 10);                    // firstCode = 10 (LINE FEED)
+        U16(b, macCode);               // firstCode = the MacRoman byte key
         U16(b, 1);                     // entryCount
         U16(b, 1);                     // glyphIndexArray = [gid 1]
         return b.ToArray();
@@ -113,6 +113,14 @@ internal static class ZeroAdvanceSfntFixture
         ("hmtx", Hmtx(gid1Advance)),
         ("cmap", CmapMacFormat6()),
         ("glyf", new byte[4]));        // content unused; presence required for IsValid
+
+    public static byte[] MacRomanFontBytes(ushort macCode, ushort gid1Advance = 450) => MinimalSfnt.Build(
+        ("head", Head()),
+        ("maxp", Maxp(2)),
+        ("hhea", Hhea(2)),
+        ("hmtx", Hmtx(gid1Advance)),
+        ("cmap", CmapMacFormat6(macCode)),
+        ("glyf", new byte[4]));
 
     public static byte[] SymbolFontBytes(ushort gid1Advance = 0) => MinimalSfnt.Build(
         ("head", Head()),

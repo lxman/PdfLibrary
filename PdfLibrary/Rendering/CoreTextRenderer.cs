@@ -289,7 +289,7 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
             }
             else
             {
-                glyphId = metrics.GetGlyphId(charCode);
+                glyphId = TrueTypeGlyphResolver.Resolve(font, metrics, charCode);
             }
         }
 

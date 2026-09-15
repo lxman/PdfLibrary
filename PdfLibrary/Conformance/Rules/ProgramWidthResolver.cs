@@ -82,41 +82,13 @@ internal static class ProgramWidthResolver
         }
     }
 
-    // Moved verbatim from FontProgramRule.TrueTypeAdvance, reshaped only to surface the gid the
-    // advance came from. The doc comments there (WinAnsi remap band; the issue-26 zero-advance
-    // recall-for-precision trade) travel with the code.
+    // Uses the renderer's shared code->GID decision so the conformance comparison cannot inspect a
+    // different glyph (or skip one) when the PDF encoding and the embedded cmap use different byte
+    // spaces. Zero-advance glyphs remain deliberately unmeasurable and are skipped.
     private static (ushort Gid, double Program)? TrueTypeAdvance(
         PdfFont font, EmbeddedFontMetrics metrics, int code)
     {
-        // Issue 30: when both the PDF descriptor and program identify a symbolic TrueType font,
-        // its authoritative mapping is the (3,0) Windows-Symbol cmap, commonly keyed at
-        // U+F000+code. AGL Unicode and the generic raw-code lookup can select the wrong glyph (or
-        // miss the real one). A mismatched descriptor/program pair retains the established fallback:
-        // the disagreement alone does not make either interpretation authoritative for this rule.
-        if (font.GetDescriptor()?.IsSymbolic == true && metrics.HasSymbolCmapEncoding())
-        {
-            ushort symbolGid = metrics.GetGlyphIdBySymbolCode((ushort)code);
-            if (symbolGid == 0)
-                return null;
-            ushort symbolAdvance = metrics.GetAdvanceWidth(symbolGid);
-            return symbolAdvance == 0 ? null : (symbolGid, Scale(metrics, symbolAdvance));
-        }
-
-        string? glyphName = font.Encoding?.GetGlyphName(code);
-        string? unicode = glyphName is null ? null : GlyphList.GetUnicode(glyphName);
-        if (!string.IsNullOrEmpty(unicode))
-        {
-            int cp = char.ConvertToUtf32(unicode, 0);
-            ushort gidByUnicode = metrics.GetGlyphIdByUnicode(cp);
-            if (gidByUnicode != 0)
-            {
-                ushort widthViaUnicode = metrics.GetAdvanceWidth(gidByUnicode);
-                if (widthViaUnicode > 0)
-                    return (gidByUnicode, Scale(metrics, widthViaUnicode));
-            }
-        }
-
-        ushort gid = metrics.GetGlyphId((ushort)code);
+        ushort gid = TrueTypeGlyphResolver.Resolve(font, metrics, code);
         if (gid == 0)
             return null;
         ushort advance = metrics.GetAdvanceWidth(gid);

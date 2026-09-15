@@ -25,6 +25,12 @@ namespace PdfLibrary.Fonts.Embedded;
 /// </summary>
 internal class EmbeddedFontMetrics
 {
+    private static readonly Lazy<Encoding> StrictMacRoman = new(() =>
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(10000, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+    });
+
     private FontParser.SfntFont? _sfnt;
     private readonly HeadTable? _headTable;
     private readonly HheaTable? _hheaTable;
@@ -1106,13 +1112,88 @@ internal class EmbeddedFontMetrics
     /// <returns>Glyph ID, or 0 if the code point is unmapped or outside the BMP</returns>
     public ushort GetGlyphIdByUnicode(int unicode)
     {
-        if (unicode <= 0 || unicode > 0xFFFF)
+        if (unicode <= 0 || unicode > 0xFFFF || unicode is >= 0xD800 and <= 0xDFFF)
             return 0;
 
-        return _cmapTable is not null
-            ? _cmapTable.GetGlyphId((ushort)unicode)
+        if (_cmapTable is null)
             // No cmap (e.g. subset font): fall back to direct code->glyph mapping.
-            : unicode < NumGlyphs ? (ushort)unicode : (ushort)0;
+            return unicode < NumGlyphs ? (ushort)unicode : (ushort)0;
+
+        ushort codePoint = (ushort)unicode;
+
+        // A cmap key only represents Unicode for Unicode-platform, Windows-Unicode, and the
+        // corresponding ISO subtables. Passing U+00FC straight to a Macintosh/Roman subtable asks
+        // for MacRoman byte 0xFC, not 'udieresis' (0x9F). ASCII hid this distinction because the two
+        // encodings agree below 0x80. Prefer every genuine Unicode subtable first, preserving the
+        // same platform order CmapTable.GetGlyphId uses for those records.
+        foreach (CmapEncoding encoding in _cmapTable.Encodings.OrderBy(UnicodeSubtableRank))
+        {
+            if (!IsUnicodeSubtable(encoding.Encoding, codePoint))
+                continue;
+            ushort glyphId = encoding.SubTable.GetGlyphId(codePoint);
+            if (glyphId != 0)
+                return glyphId;
+        }
+
+        // Some valid subset programs carry only a (1,0) Macintosh/Roman cmap even though the PDF
+        // simple font declares /WinAnsiEncoding. Translate the already-decoded Unicode value into
+        // the key space that subtable actually uses. This is the acme_invoice-42_ZUGFeRD.pdf shape:
+        // WinAnsi FC -> U+00FC -> MacRoman 9F -> the embedded udieresis glyph.
+        if (TryGetMacRomanCode(unicode, out byte macCode))
+        {
+            foreach (CmapEncoding encoding in _cmapTable.Encodings)
+            {
+                if (encoding.Encoding is not
+                    { PlatformId: PlatformId.Macintosh, MacintoshEncoding: MacintoshEncodingId.Roman })
+                    continue;
+                ushort glyphId = encoding.SubTable.GetGlyphId(macCode);
+                if (glyphId != 0)
+                    return glyphId;
+            }
+        }
+
+        return 0;
+    }
+
+    private static bool IsUnicodeSubtable(EncodingRecord record, ushort codePoint) => record.PlatformId switch
+    {
+        PlatformId.Unicode => true,
+        PlatformId.Windows => record.WindowsEncoding is WindowsEncodingId.UnicodeBmp or WindowsEncodingId.UnicodeUCS4,
+        PlatformId.Iso when record.IsoEncoding == IsoEncodingId.Iso10646 => true,
+        PlatformId.Iso when record.IsoEncoding == IsoEncodingId.Iso8859_1 => codePoint <= 0xFF,
+        PlatformId.Iso when record.IsoEncoding == IsoEncodingId.Ascii7Bit => codePoint <= 0x7F,
+        _ => false
+    };
+
+    private static int UnicodeSubtableRank(CmapEncoding encoding) => encoding.Encoding switch
+    {
+        { PlatformId: PlatformId.Windows, WindowsEncoding: WindowsEncodingId.UnicodeUCS4 } => 0,
+        { PlatformId: PlatformId.Windows, WindowsEncoding: WindowsEncodingId.UnicodeBmp } => 1,
+        { PlatformId: PlatformId.Unicode } => 2,
+        { PlatformId: PlatformId.Iso, IsoEncoding: IsoEncodingId.Iso10646 } => 3,
+        { PlatformId: PlatformId.Iso, IsoEncoding: IsoEncodingId.Iso8859_1 } => 4,
+        { PlatformId: PlatformId.Iso, IsoEncoding: IsoEncodingId.Ascii7Bit } => 5,
+        _ => int.MaxValue
+    };
+
+    private static bool TryGetMacRomanCode(int unicode, out byte code)
+    {
+        try
+        {
+            byte[] bytes = StrictMacRoman.Value.GetBytes(char.ConvertFromUtf32(unicode));
+            if (bytes.Length == 1)
+            {
+                code = bytes[0];
+                return true;
+            }
+        }
+        catch (EncoderFallbackException)
+        {
+            // The character has no Macintosh Roman representation.
+        }
+
+        code = 0;
+        return false;
     }
 
     /// <summary>

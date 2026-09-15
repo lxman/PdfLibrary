@@ -7,6 +7,7 @@ using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
+using PdfLibrary.Tests.Fonts.Embedded;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -22,6 +23,46 @@ public class CoreTextRendererTests
     {
         string root = Environment.GetEnvironmentVariable(Local708CorpusVariable) ?? Local708DefaultCorpus;
         return Directory.Exists(root) ? root : null;
+    }
+
+    [Theory]
+    [InlineData(0xDF, 0xA7)] // germandbls
+    [InlineData(0xE4, 0x8A)] // adieresis
+    [InlineData(0xFC, 0x9F)] // udieresis
+    public void Simple_WinAnsi_TrueType_resolves_nonAscii_through_a_MacRoman_only_cmap(
+        int winAnsiCode, int macRomanCode)
+    {
+        // The production reproducer's TT0 font declares /WinAnsiEncoding, while its subset program
+        // has only a (1,0) Macintosh/Roman cmap. Feeding the WinAnsi byte directly to that cmap
+        // returns .notdef for the affected German characters even though their outlines are present.
+        byte[] fontProgram = ZeroAdvanceSfntFixture.MacRomanFontBytes((ushort)macRomanCode);
+        using var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [new PdfName("Length1")] = new PdfInteger(fontProgram.Length) }, fontProgram));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("FontDescriptor"),
+            [new PdfName("FontName")] = new PdfName("ABCDEF+MacOnly"),
+            [new PdfName("Flags")] = new PdfInteger(32), // non-symbolic
+            [new PdfName("FontFile2")] = new PdfIndirectReference(3, 0),
+        });
+        var dictionary = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("TrueType"),
+            [new PdfName("BaseFont")] = new PdfName("ABCDEF+MacOnly"),
+            [new PdfName("Encoding")] = new PdfName("WinAnsiEncoding"),
+            [new PdfName("FirstChar")] = new PdfInteger(winAnsiCode),
+            [new PdfName("LastChar")] = new PdfInteger(winAnsiCode),
+            [new PdfName("Widths")] = new PdfArray(new PdfInteger(500)),
+            [new PdfName("FontDescriptor")] = new PdfIndirectReference(2, 0),
+        };
+        var font = new TrueTypeFont(dictionary, doc);
+        EmbeddedFontMetrics metrics = font.GetEmbeddedMetrics()!;
+
+        Assert.Equal(0, metrics.GetGlyphId((ushort)winAnsiCode));
+        Assert.Equal(1, metrics.GetGlyphId((ushort)macRomanCode));
+        Assert.Equal(1, CoreTextRenderer.ResolveGlyphId(metrics, font, (ushort)winAnsiCode, out _));
     }
 
     /// <summary>
