@@ -848,7 +848,11 @@ internal class PdfRenderer : PdfContentProcessor
             // Debug logging for specific character codes
             if (charCode is 0x03 or 0x0766 or >= 0x0700 and <= 0x0800)
             {
-                PdfLogger.Log(LogCategory.Text, $"  DEBUG: charCode=0x{charCode:X4} → '{decoded}' (U+{(int)decoded[0]:X4})");
+                string decodedCodePoint = decoded.Length == 0
+                    ? "no Unicode output"
+                    : $"U+{(int)decoded[0]:X4}";
+                PdfLogger.Log(LogCategory.Text,
+                    $"  DEBUG: charCode=0x{charCode:X4} → '{decoded}' ({decodedCodePoint})");
             }
 
             decodedText.Append(decoded);

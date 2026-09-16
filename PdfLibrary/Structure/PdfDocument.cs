@@ -17,6 +17,7 @@ public partial class PdfDocument : IDisposable
 {
     private readonly Dictionary<int, PdfObject> _objects = new();
     private Stream? _stream;
+    private bool _ownsStream;
     private bool _disposed;
 
     /// <summary>
@@ -527,7 +528,8 @@ public partial class PdfDocument : IDisposable
     /// Loads a PDF document from a stream
     /// </summary>
     /// <param name="stream">Stream containing PDF data</param>
-    /// <param name="leaveOpen">If false, the stream will be disposed when the document is disposed</param>
+    /// <param name="leaveOpen">If true, the caller retains ownership and must keep the stream open
+    /// until the document is disposed; otherwise the stream is disposed with the document.</param>
     public static PdfDocument Load(Stream stream, bool leaveOpen = false)
     {
         return Load(stream, password: "", leaveOpen);
@@ -538,7 +540,8 @@ public partial class PdfDocument : IDisposable
     /// </summary>
     /// <param name="stream">Stream containing PDF data</param>
     /// <param name="password">Password for encrypted documents (empty string for no password)</param>
-    /// <param name="leaveOpen">If false, the stream will be disposed when the document is disposed</param>
+    /// <param name="leaveOpen">If true, the caller retains ownership and must keep the stream open
+    /// until the document is disposed; otherwise the stream is disposed with the document.</param>
     public static PdfDocument Load(Stream stream, string password, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -552,9 +555,14 @@ public partial class PdfDocument : IDisposable
         var totalStopwatch = Stopwatch.StartNew();
         var phaseStopwatch = new Stopwatch();
 
-        var document = new PdfDocument();
-        if (!leaveOpen)
-            document._stream = stream;
+        // Lazy object resolution needs the source stream for the lifetime of the document even when
+        // the caller retains ownership.  Stream retention and stream ownership are separate concerns:
+        // leaveOpen controls only whether Dispose closes the stream.
+        var document = new PdfDocument
+        {
+            _stream = stream,
+            _ownsStream = !leaveOpen,
+        };
 
         try
         {
@@ -1011,7 +1019,11 @@ public partial class PdfDocument : IDisposable
         if (_disposed)
             return;
 
-        _stream?.Dispose();
+        Stream? stream = _stream;
+        _stream = null;
+        if (_ownsStream)
+            stream?.Dispose();
+        _ownsStream = false;
         _disposed = true;
     }
 
