@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.6.4] - 2026-10-19
+
+### Fixed
+- **Image dictionary precedence, `/SMask` / `/Mask` unpacking, and MRC mask upsampling (ISO 32000-2 EC-3 Issue #215, §8.9.5.1).**
+  When `ImageMask` is `true`, `/ColorSpace` and `/Mask` are now ignored; when `SMaskInData` is non-zero,
+  `/SMask` is ignored; and when an image defines an effective `/SMask`, it overrides the active
+  graphics-state soft mask in `RecordingRenderTarget` instead of multiplying both masks. In addition,
+  1/2/4/8/16-bit `/SMask` and explicit `/Mask` image streams are unpacked across all bit depths (with
+  explicit `/Mask` samples inverted per §8.9.6.3 and applied on `JPXDecode` images when `SMaskInData` is 0),
+  and low-resolution color layers paired with higher-resolution 1-bit masks in MRC documents are
+  upsampled to the mask dimensions.
+- **Optional Content Membership Dictionary (`/OCMD`) visibility on XObjects (§8.11.2.2).**
+  `OptionalContentManager.IsVisible(PdfStream)` now evaluates `/OCMD` policies (`/P /AllOff`, `/AnyOff`,
+  `/AllOn`, `/AnyOn`, and `/VE`) instead of treating non-`/OCG` dictionaries as unconditionally visible.
+- **Type 3 font glyph rendering matrix includes `HorizontalScaling` (`Tz`) and `TextRise` (`Ts`) (EC-3 Issue #376, §§9.3.4 & 9.4.4).**
+  `RenderType3Text` and `RenderType3TextWithPositioning` now include `Th = Tz / 100.0` and `Trise` in
+  `fontSizeMatrix`, and `ExecuteType3CharProc` clones the active graphics state so `CharProc` operators
+  do not leak into outer text state.
+- **Empty path-painting operators clear `PendingClip` (EC-3 Issue #549, §8.5.3.1).**
+  `OnStroke`, `OnFill`, and `OnFillAndStroke` now clear any pending `W`/`W*` clipping flag when invoked
+  on an empty path, matching `OnEndPath` (`n`).
+- **Annotation `/BS` vs `/Border` precedence and fallback (EC-3 Issue #287, §12.5.2 Table 166).**
+  When `/BS` is present on an annotation dictionary, `/Border` is ignored; when `/BS` is absent, border
+  width falls back to `/Border[2]`. `PdfDocumentWriter` no longer emits both `/BS` and `/Border` on the
+  same annotation.
+- **Negative generation numbers on indirect references throw `PdfParseException` (EC-3 Issue #379, §7.3.10).**
+
+### Added
+- **PDF 2.0 (`Version >= 2.0`)-scoped EC-3 conformance and appearance rules:**
+  - Reject `/F`, `/FFilter`, `/FDecodeParms`, and indirect Table 5 / Table 17 entries on XRef stream
+    dictionaries in PDF 2.0 (EC-3 Issues #246 & #720, §7.5.8.2).
+  - Flag leading zeros on indirect object numbers and generation numbers in `IndirectObjectSpacingRule`
+    when `Version >= 2.0` (EC-3 Issue #379, §7.3.10).
+  - Default annotation nonstroking opacity `/ca` to `/CA` when synthesizing appearance streams in
+    PDF 2.0 (EC-3 Issue #577, §12.5.2 Table 166).
+  - Synthesize `Polygon` and `PolyLine` annotation appearances with `/Path` overriding `/Vertices` in
+    PDF 2.0 (EC-3 Issue #444, §12.5.6.9 Table 178).
+  - Validate `PdfFontDescriptor.FontWeight` in the `1..1000` range (EC-3 Issue #474, §9.8.1 Table 120).
+  - Require `/EF` inside `FileAttachment` annotation `/FS` dictionaries in PDF 2.0 (EC-3 Issue #481,
+    §12.5.6.15 Table 187).
+
 ## [2.6.3] - 2026-09-11
 
 ### Fixed
