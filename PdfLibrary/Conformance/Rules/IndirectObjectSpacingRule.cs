@@ -41,6 +41,8 @@ internal sealed class IndirectObjectSpacingRule : IConformanceRule
             .OrderBy(e => e.ByteOffset)
             .ToList();
 
+        bool isPdf20 = context.Document.Version >= Core.PdfVersion.Pdf20;
+
         for (int i = 0; i < entries.Count; i++)
         {
             PdfXrefEntry entry = entries[i];
@@ -51,7 +53,7 @@ internal sealed class IndirectObjectSpacingRule : IConformanceRule
             long regionEnd = i + 1 < entries.Count ? entries[i + 1].ByteOffset : bytes.Length;
             if (regionEnd > bytes.Length) regionEnd = bytes.Length;
 
-            string? violation = Evaluate(bytes, (int)start, (int)regionEnd, entry.ObjectNumber, entry.GenerationNumber);
+            string? violation = Evaluate(bytes, (int)start, (int)regionEnd, entry.ObjectNumber, entry.GenerationNumber, isPdf20);
             if (violation is null)
                 continue;
 
@@ -71,19 +73,21 @@ internal sealed class IndirectObjectSpacingRule : IConformanceRule
     /// bytes at <paramref name="start"/> do not parse as this object's <c>N G obj</c> header, in which case
     /// the object is skipped (never flagged), keeping the rule a strict subset of the reference validator.
     /// </summary>
-    private static string? Evaluate(byte[] b, int start, int regionEnd, int expectNum, int expectGen)
+    private static string? Evaluate(byte[] b, int start, int regionEnd, int expectNum, int expectGen, bool isPdf20 = false)
     {
         int p = start;
 
         int numStart = p;
         while (p < b.Length && IsDigit(b[p])) p++;
-        if (p == numStart || !DigitsEqual(b, numStart, p, expectNum))
+        int numEnd = p;
+        if (numEnd == numStart || !DigitsEqual(b, numStart, numEnd, expectNum))
             return null; // offset does not point at this object's number — do not trust it
 
         int ws1 = SkipWhitespace(b, ref p);
         int genStart = p;
         while (p < b.Length && IsDigit(b[p])) p++;
-        if (ws1 == 0 || p == genStart || !DigitsEqual(b, genStart, p, expectGen))
+        int genEnd = p;
+        if (ws1 == 0 || genEnd == genStart || !DigitsEqual(b, genStart, genEnd, expectGen))
             return null;
 
         int ws2 = SkipWhitespace(b, ref p);
@@ -91,7 +95,14 @@ internal sealed class IndirectObjectSpacingRule : IConformanceRule
             return null; // not a 'N G obj' header at this offset
         int afterObj = p + ObjKeyword.Length;
 
-        // Header validated against the xref — every check below is a genuine clause-6.1.9 violation.
+        // Header validated against the xref — every check below is a genuine clause-6.1.9 / ISO 32000-2 7.3.10 violation.
+        if (isPdf20)
+        {
+            if (numEnd - numStart > 1 && b[numStart] == (byte)'0')
+                return "the object number shall not have leading zeros in PDF 2.0 (ISO 32000-2 7.3.10)";
+            if (genEnd - genStart > 1 && b[genStart] == (byte)'0')
+                return "the generation number shall not have leading zeros in PDF 2.0 (ISO 32000-2 7.3.10)";
+        }
         if (!IsEol(b[start - 1]))
             return "the object number is not immediately preceded by an EOL marker";
         if (ws1 != 1)

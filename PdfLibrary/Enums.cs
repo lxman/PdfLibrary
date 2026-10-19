@@ -1,4 +1,4 @@
-﻿// ReSharper disable CheckNamespace
+// ReSharper disable CheckNamespace
 // ReSharper disable InconsistentNaming
 #pragma warning disable CA1050
 
@@ -328,12 +328,12 @@ public enum PdfPageLabelStyle
     LowercaseRoman,
 
     /// <summary>
-    /// Uppercase letters (A, B, C, ... Z, AA, AB, ...)
+    /// Uppercase letters (A to Z, AA to ZZ, AAA to ZZZ, ...)
     /// </summary>
     UppercaseLetters,
 
     /// <summary>
-    /// Lowercase letters (a, b, c, ... z, aa, ab, ...)
+    /// Lowercase letters (a to z, aa to zz, aaa to zzz, ...)
     /// </summary>
     LowercaseLetters
 }

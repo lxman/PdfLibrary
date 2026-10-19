@@ -153,8 +153,50 @@ public static class PdfImageToRgba
                 };
             }
 
-            // Branch 1: JPXDecode
+            // SMask / Mask preamble (shared by all branches, including JPXDecode).
+            // Per ISO 32000-2:2020 (EC-3, Issue #215) Clause 8.9.5.1:
+            // - If ImageMask is true, Mask and ColorSpace shall be ignored.
+            // - If SMaskInData is non-zero, SMask shall be ignored.
+            // - If SMask is present, it overrides the current soft mask in the graphics state as well as
+            //   the image's Mask entry, if any.
+            byte[]? smaskData = null;
+            int smaskWidth = 0;
+            int smaskHeight = 0;
+            bool hasActualSMask = image.HasEffectiveSMask;
+
             PdfStream stream = image.Stream;
+            if (hasActualSMask && stream.Dictionary.TryGetValue(new PdfName("SMask"), out PdfObject? smaskObj))
+            {
+                if (smaskObj is PdfIndirectReference smaskRef && doc is not null)
+                    smaskObj = doc.ResolveReference(smaskRef);
+
+                if (smaskObj is PdfStream smaskStream)
+                {
+                    var smaskImage = new PdfImage(smaskStream, doc);
+                    smaskData = DecodeSmaskToBytes(smaskImage, out smaskWidth, out smaskHeight);
+                }
+            }
+            else if (!image.IsImageMask && stream.Dictionary.TryGetValue(new PdfName("Mask"), out PdfObject? maskObj))
+            {
+                if (maskObj is PdfIndirectReference maskRef && doc is not null)
+                    maskObj = doc.ResolveReference(maskRef);
+
+                if (maskObj is PdfStream maskStream)
+                {
+                    // Explicit Masking (ISO 32000-2 §8.9.6.3): sample 0 (after /Decode) marks the pixel
+                    // as opaque (255) and sample 1 marks it as transparent (0) — the inverse of /SMask.
+                    var maskImage = new PdfImage(maskStream, doc);
+                    smaskData = DecodeSmaskToBytes(maskImage, out smaskWidth, out smaskHeight);
+                    if (smaskData is not null)
+                    {
+                        for (var i = 0; i < smaskData.Length; i++)
+                            smaskData[i] = (byte)(255 - smaskData[i]);
+                        hasActualSMask = true;
+                    }
+                }
+            }
+
+            // Branch 1: JPXDecode
             if (stream.Dictionary.TryGetValue(new PdfName("Filter"), out PdfObject? filterObj))
             {
                 List<string> filters = [];
@@ -198,6 +240,11 @@ public static class PdfImageToRgba
                         }
 
                         byte[] rgba = ConvertRawBytesToRgba(pixelData, jp2Width, jp2Height, components);
+                        if (smaskData is not null)
+                        {
+                            rgba = ApplySmaskToRgba(rgba, ref jp2Width, ref jp2Height, smaskData, smaskWidth, smaskHeight, allowUpsampleColor: proofCmyk is null && components is 1 or 3);
+                            return new RgbaImage(rgba, jp2Width, jp2Height, AlphaMode.Unpremultiplied);
+                        }
 
                         return new RgbaImage(rgba, jp2Width, jp2Height, AlphaMode.Opaque);
                     }
@@ -208,40 +255,13 @@ public static class PdfImageToRgba
                 }
             }
 
-            // SMask preamble (shared by branches 2–10)
-            byte[]? smaskData = null;
-            byte[]? rentedSmask = null;
-
-            bool hasActualSMask = stream.Dictionary.ContainsKey(new PdfName("SMask"));
-
-            if (hasActualSMask)
+            // If SMask dimensions differ from the parent image for standard (non-JPX) branches,
+            // resample the mask to (width, height) so per-pixel alpha lookup matches 1:1.
+            if (smaskData is not null && (smaskWidth != width || smaskHeight != height))
             {
-                if (stream.Dictionary.TryGetValue(new PdfName("SMask"), out PdfObject? smaskObj))
-                {
-                    if (smaskObj is PdfIndirectReference smaskRef && doc is not null)
-                        smaskObj = doc.ResolveReference(smaskRef);
-
-                    if (smaskObj is PdfStream smaskStream)
-                    {
-                        var smaskImage = new PdfImage(smaskStream, doc);
-                        byte[] rawSmaskData = smaskImage.GetDecodedData();
-
-                        int expectedGrayscaleSize = smaskImage.Width * smaskImage.Height;
-                        int expectedRgbSize = expectedGrayscaleSize * 3;
-
-                        if (rawSmaskData.Length == expectedRgbSize)
-                        {
-                            rentedSmask = ArrayPool<byte>.Shared.Rent(expectedGrayscaleSize);
-                            for (var i = 0; i < expectedGrayscaleSize; i++)
-                                rentedSmask[i] = rawSmaskData[i * 3];
-                            smaskData = rentedSmask;
-                        }
-                        else
-                        {
-                            smaskData = rawSmaskData;
-                        }
-                    }
-                }
+                smaskData = ResampleMask(smaskData, smaskWidth, smaskHeight, width, height);
+                smaskWidth = width;
+                smaskHeight = height;
             }
 
             // 16-bit samples are unpacked, big-endian byte pairs (no bit-packing). Down-convert each sample
@@ -972,8 +992,7 @@ public static class PdfImageToRgba
             }
             finally
             {
-                if (rentedSmask is not null)
-                    ArrayPool<byte>.Shared.Return(rentedSmask);
+                // No pooled SMask buffer to return.
             }
         }
         catch (Exception ex)
@@ -981,6 +1000,158 @@ public static class PdfImageToRgba
             PdfLogger.Log(LogCategory.Images, $"PdfImageToRgba.ToRgba exception: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Decodes a soft-mask image (<c>/SMask</c>) into an 8-bit grayscale alpha buffer of size
+    /// <c>smaskWidth * smaskHeight</c>, unpacking 1/2/4/8/16-bit samples and applying the soft-mask's
+    /// <c>/Decode</c> array when present (ISO 32000-2 Clause 11.6.5.2, Table 143).
+    /// </summary>
+    private static byte[]? DecodeSmaskToBytes(PdfImage smaskImage, out int smaskWidth, out int smaskHeight)
+    {
+        smaskWidth = smaskImage.Width;
+        smaskHeight = smaskImage.Height;
+        if (smaskWidth <= 0 || smaskHeight <= 0)
+            return null;
+
+        byte[] raw = smaskImage.GetDecodedData();
+        if (raw.Length == 0)
+            return null;
+
+        int bpc = smaskImage.BitsPerComponent;
+        int pixelCount = smaskWidth * smaskHeight;
+        var mask = new byte[pixelCount];
+
+        if (bpc == 8)
+        {
+            if (raw.Length == pixelCount * 3)
+            {
+                for (var i = 0; i < pixelCount; i++)
+                    mask[i] = raw[i * 3];
+            }
+            else
+            {
+                int copyLen = Math.Min(raw.Length, pixelCount);
+                Array.Copy(raw, mask, copyLen);
+            }
+        }
+        else if (bpc == 16)
+        {
+            int count = Math.Min(raw.Length / 2, pixelCount);
+            for (var i = 0; i < count; i++)
+                mask[i] = raw[i * 2];
+        }
+        else if (bpc is 1 or 2 or 4)
+        {
+            int bytesPerRow = (smaskWidth * bpc + 7) / 8;
+            int maxSample = (1 << bpc) - 1;
+            int bitMask = maxSample;
+            for (var y = 0; y < smaskHeight; y++)
+            {
+                int rowStart = y * bytesPerRow;
+                int dstRowStart = y * smaskWidth;
+                for (var x = 0; x < smaskWidth; x++)
+                {
+                    int bitPos = x * bpc;
+                    int byteIdx = rowStart + (bitPos >> 3);
+                    if (byteIdx >= raw.Length) break;
+                    int shift = 8 - bpc - (bitPos & 7);
+                    int sample = (raw[byteIdx] >> shift) & bitMask;
+                    mask[dstRowStart + x] = (byte)(sample * 255 / maxSample);
+                }
+            }
+        }
+        else
+        {
+            int copyLen = Math.Min(raw.Length, pixelCount);
+            Array.Copy(raw, mask, copyLen);
+        }
+
+        double[]? decode = smaskImage.DecodeArray;
+        if (decode is { Length: >= 2 } && (decode[0] != 0.0 || decode[1] != 1.0))
+        {
+            double dMin = decode[0];
+            double dMax = decode[1];
+            for (var i = 0; i < pixelCount; i++)
+                mask[i] = (byte)DecodeSample(mask[i], dMin, dMax);
+        }
+
+        return mask;
+    }
+
+    /// <summary>
+    /// Applies a decoded 8-bit soft-mask buffer to an RGBA image buffer. When the soft-mask has higher
+    /// resolution than the color image (common in MRC-compressed scanned documents where a 75–100 DPI
+    /// JPEG2000 foreground is paired with a 300 DPI 1-bit JBIG2 soft mask), upsamples the color buffer
+    /// to the soft-mask resolution so text edges remain sharp.
+    /// </summary>
+    private static byte[] ApplySmaskToRgba(
+        byte[] rgba,
+        ref int width,
+        ref int height,
+        byte[] smask,
+        int smaskWidth,
+        int smaskHeight,
+        bool allowUpsampleColor)
+    {
+        if (smaskWidth == width && smaskHeight == height)
+        {
+            int count = Math.Min(width * height, smask.Length);
+            for (var i = 0; i < count; i++)
+                rgba[i * 4 + 3] = smask[i];
+            return rgba;
+        }
+
+        if (allowUpsampleColor && smaskWidth > width && smaskHeight > height)
+        {
+            var upsampled = new byte[smaskWidth * smaskHeight * 4];
+            for (var y = 0; y < smaskHeight; y++)
+            {
+                int srcY = Math.Min(y * height / smaskHeight, height - 1);
+                int srcRow = srcY * width;
+                int dstRow = y * smaskWidth;
+                for (var x = 0; x < smaskWidth; x++)
+                {
+                    int srcX = Math.Min(x * width / smaskWidth, width - 1);
+                    int srcOff = (srcRow + srcX) * 4;
+                    int dstIdx = dstRow + x;
+                    int dstOff = dstIdx * 4;
+                    upsampled[dstOff] = rgba[srcOff];
+                    upsampled[dstOff + 1] = rgba[srcOff + 1];
+                    upsampled[dstOff + 2] = rgba[srcOff + 2];
+                    upsampled[dstOff + 3] = smask[dstIdx];
+                }
+            }
+            width = smaskWidth;
+            height = smaskHeight;
+            return upsampled;
+        }
+
+        byte[] resampledMask = ResampleMask(smask, smaskWidth, smaskHeight, width, height);
+        int pixelCount = width * height;
+        for (var i = 0; i < pixelCount; i++)
+            rgba[i * 4 + 3] = resampledMask[i];
+        return rgba;
+    }
+
+    private static byte[] ResampleMask(byte[] mask, int srcW, int srcH, int dstW, int dstH)
+    {
+        if (srcW == dstW && srcH == dstH)
+            return mask;
+
+        var dst = new byte[dstW * dstH];
+        for (var y = 0; y < dstH; y++)
+        {
+            int srcY = Math.Min(y * srcH / dstH, srcH - 1);
+            int srcRow = srcY * srcW;
+            int dstRow = y * dstW;
+            for (var x = 0; x < dstW; x++)
+            {
+                int srcX = Math.Min(x * srcW / dstW, srcW - 1);
+                dst[dstRow + x] = mask[srcRow + srcX];
+            }
+        }
+        return dst;
     }
 
     /// <summary>Consolidated CMYK→RGB conversion: r=(255-c)*(255-k)/255, same formula used in all CMYK branches.</summary>
@@ -1010,6 +1181,8 @@ public static class PdfImageToRgba
     private static bool TryGetSMaskMatte(PdfImage image, PdfDocument? doc, out (byte R, byte G, byte B) matte)
     {
         matte = default;
+        if (!image.HasEffectiveSMask)
+            return false;
 
         image.Stream.Dictionary.TryGetValue(new PdfName("SMask"), out PdfObject? smaskObj);
         if (Resolve(smaskObj, doc) is not PdfStream smask)

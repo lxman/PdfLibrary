@@ -199,14 +199,29 @@ public sealed partial class PdfPageCollection
 
     private double? ReadBorderWidth(PdfDictionary annot)
     {
-        if (Resolve(annot.Get(new PdfName("BS"))) is not PdfDictionary bs)
-            return null;
-        return Resolve(bs.Get(new PdfName("W"))) switch
+        // Per ISO 32000-2:2020 (EC-3, Issue #287) Clause 12.5.2, Table 166:
+        // If /BS is present, /Border shall be ignored (default /W in /BS is 1.0 per Table 168).
+        if (Resolve(annot.Get(new PdfName("BS"))) is PdfDictionary bs)
         {
-            PdfReal r => r.Value,
-            PdfInteger n => n.Value,
-            _ => null
-        };
+            return Resolve(bs.Get(new PdfName("W"))) switch
+            {
+                PdfReal r => r.Value,
+                PdfInteger n => n.Value,
+                _ => 1.0
+            };
+        }
+
+        if (Resolve(annot.Get(new PdfName("Border"))) is PdfArray { Count: >= 3 } border)
+        {
+            return Resolve(border[2]) switch
+            {
+                PdfReal r => r.Value,
+                PdfInteger n => n.Value,
+                _ => null
+            };
+        }
+
+        return null;
     }
 
     private static double AnnotNum(PdfObject? obj) => obj switch

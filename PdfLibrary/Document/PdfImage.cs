@@ -55,24 +55,29 @@ public class PdfImage
             [new PdfName("BitsPerComponent")] = new PdfInteger(inlineImage.BitsPerComponent)
         };
 
-        // Map color space (handle abbreviated names)
-        // Check if the color space was already resolved in the Parameters dictionary
-        // (PdfRenderer.OnInlineImage resolves color space resource references)
-        PdfName csKey = inlineImage.Parameters.ContainsKey(new PdfName("CS"))
-            ? new PdfName("CS")
-            : new PdfName("ColorSpace");
+        // Per ISO 32000-2 §8.9.5.1 (EC-3 Issue #215): if ImageMask is true, ColorSpace and Mask
+        // shall not be present (and if present, shall be ignored).
+        if (!inlineImage.ImageMask)
+        {
+            // Map color space (handle abbreviated names)
+            // Check if the color space was already resolved in the Parameters dictionary
+            // (PdfRenderer.OnInlineImage resolves color space resource references)
+            PdfName csKey = inlineImage.Parameters.ContainsKey(new PdfName("CS"))
+                ? new PdfName("CS")
+                : new PdfName("ColorSpace");
 
-        if (inlineImage.Parameters.TryGetValue(csKey, out PdfObject? resolvedCs) &&
-            resolvedCs is not PdfName)
-        {
-            // Use the resolved color space object (array or other type)
-            dict[new PdfName("ColorSpace")] = resolvedCs;
-        }
-        else
-        {
-            // Fall back to creating a PdfName from the string
-            string colorSpace = inlineImage.ColorSpace;
-            dict[new PdfName("ColorSpace")] = new PdfName(colorSpace);
+            if (inlineImage.Parameters.TryGetValue(csKey, out PdfObject? resolvedCs) &&
+                resolvedCs is not PdfName)
+            {
+                // Use the resolved color space object (array or other type)
+                dict[new PdfName("ColorSpace")] = resolvedCs;
+            }
+            else
+            {
+                // Fall back to creating a PdfName from the string
+                string colorSpace = inlineImage.ColorSpace;
+                dict[new PdfName("ColorSpace")] = new PdfName(colorSpace);
+            }
         }
 
         // Copy filter if present
@@ -223,6 +228,10 @@ public class PdfImage
     {
         get
         {
+            // ISO 32000-2 §8.9.5.1 (EC-3 Issue #215): if ImageMask is true, ColorSpace shall be ignored.
+            if (IsImageMask)
+                return "Unknown";
+
             if (!_stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out PdfObject? obj))
                 return "Unknown";
 
@@ -249,6 +258,10 @@ public class PdfImage
     {
         get
         {
+            // ISO 32000-2 §8.9.5.1 (EC-3 Issue #215): if ImageMask is true, ColorSpace shall be ignored.
+            if (IsImageMask)
+                return null;
+
             if (!_stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out PdfObject? obj))
                 return null;
             if (obj is PdfIndirectReference reference && _document is not null)
@@ -309,13 +322,26 @@ public class PdfImage
     }
 
     /// <summary>
+    /// Gets the /SMaskInData value for JPXDecode images (0 by default).
+    /// Per ISO 32000-2 §8.9.5.1 (EC-3 Issue #215), if SMaskInData is non-zero, /SMask shall be ignored.
+    /// </summary>
+    internal int SMaskInData => GetDictionaryInt("SMaskInData", 0);
+
+    /// <summary>
+    /// True when the image carries an active /SMask dictionary entry that is not suppressed by
+    /// <see cref="IsImageMask"/> or a non-zero <see cref="SMaskInData"/> (ISO 32000-2 §8.9.5.1, EC-3 Issue #215).
+    /// </summary>
+    internal bool HasEffectiveSMask =>
+        !IsImageMask && SMaskInData == 0 && _stream.Dictionary.ContainsKey(new PdfName("SMask"));
+
+    /// <summary>
     /// Checks if the image has an alpha channel (transparency)
     /// </summary>
     public bool HasAlpha =>
-        // Check for soft mask (alpha channel)
-        _stream.Dictionary.ContainsKey(new PdfName("SMask")) ||
-        // Check for mask (binary transparency)
-        _stream.Dictionary.ContainsKey(new PdfName("Mask"));
+        !IsImageMask &&
+        (HasEffectiveSMask ||
+         // Check for mask (binary transparency) — ignored if ImageMask is true per EC-3 Issue #215
+         _stream.Dictionary.ContainsKey(new PdfName("Mask")));
 
     /// <summary>
     /// Gets the image intent (rendering intent)

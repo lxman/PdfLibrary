@@ -88,6 +88,24 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     public bool IsBold => (Flags & 0x40000) != 0;
 
     /// <summary>
+    /// Gets the font weight (100-900, default 400).
+    /// Per ISO 32000-2:2020 (EC-3, Issue #474) Clause 9.8.1, Table 120,
+    /// the value shall be between 1 and 1000 inclusive.
+    /// </summary>
+    public int FontWeight
+    {
+        get
+        {
+            if (!_dictionary.TryGetValue(new PdfName("FontWeight"), out PdfObject obj))
+                return 400;
+            int weight = (int)Math.Round(obj.ToDouble());
+            if (_document is { Version.Major: >= 2 })
+                return weight is >= 1 and <= 1000 ? weight : 400;
+            return weight <= 0 ? 400 : Math.Clamp(weight, 1, 1000);
+        }
+    }
+
+    /// <summary>
     /// Gets the font bounding box
     /// </summary>
     public (double llx, double lly, double urx, double ury)? FontBBox

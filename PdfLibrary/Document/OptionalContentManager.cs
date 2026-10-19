@@ -143,69 +143,13 @@ internal class OptionalContentManager
     /// </summary>
     public bool IsVisible(PdfStream xobject)
     {
-        // Check if XObject has an /OC (Optional Content) entry
-        if (!xobject.Dictionary.TryGetValue(new PdfName("OC"), out var ocObj))
+        if (!xobject.Dictionary.TryGetValue(new PdfName("OC"), out PdfObject? ocObj))
         {
-            // No OC entry means always visible
             PdfLogger.Log(LogCategory.Graphics, "  IsVisible: No /OC entry - visible");
             return true;
         }
 
-        PdfLogger.Log(LogCategory.Graphics, $"  IsVisible: Found /OC entry, type = {ocObj?.GetType().Name}");
-        PdfLogger.Log(LogCategory.Graphics, $"  Disabled OCGs count: {_disabledOCGs.Count}");
-
-        // /OC can be either:
-        // 1. An indirect reference to an OCG dictionary
-        // 2. An OCMD (Optional Content Membership Dictionary)
-
-        switch (ocObj)
-        {
-            case PdfIndirectReference reference:
-            {
-                // Check if this OCG is in the disabled set
-                var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
-                bool isDisabled = _disabledOCGs.Contains(ocgKey);
-                PdfLogger.Log(LogCategory.Graphics, $"  IsVisible: OCG reference {ocgKey}, disabled = {isDisabled}");
-                return !isDisabled;
-            }
-            // For OCMD dictionaries, we need to resolve the /OCGs entry
-            case PdfDictionary ocmd:
-            {
-                if (ocmd.TryGetValue(new PdfName("OCGs"), out PdfObject ocgsObj))
-                {
-                    switch (ocgsObj)
-                    {
-                        // /OCGs can be a single reference or an array of references
-                        case PdfIndirectReference ocgRef:
-                        {
-                            var ocgKey = $"{ocgRef.ObjectNumber} {ocgRef.GenerationNumber} R";
-                            return !_disabledOCGs.Contains(ocgKey);
-                        }
-                        case PdfArray { Count: > 0 } ocgsArray:
-                        {
-                            // For simplicity, if ANY referenced OCG is disabled, hide the content
-                            // A full implementation would check the /P (policy) entry
-                            foreach (PdfObject ocgItem in ocgsArray)
-                            {
-                                if (ocgItem is PdfIndirectReference ocgArrayRef)
-                                {
-                                    var ocgKey = $"{ocgArrayRef.ObjectNumber} {ocgArrayRef.GenerationNumber} R";
-                                    if (_disabledOCGs.Contains(ocgKey))
-                                        return false;
-                                }
-                            }
-
-                            break;
-                        }
-                    }
-                }
-
-                break;
-            }
-        }
-
-        // If we can't determine, default to visible
-        return true;
+        return IsMarkedContentVisible(ocObj);
     }
 
     /// <summary>

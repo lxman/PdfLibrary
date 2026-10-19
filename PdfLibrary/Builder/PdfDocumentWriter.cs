@@ -2492,8 +2492,10 @@ internal class PdfDocumentWriter
             writer.WriteLine($"   /F {(int)annotation.Flags}");
         }
 
-        // Border
-        if (annotation.Border is not null)
+        // Border (ISO 32000-2 EC-3 Issue #287, Table 166: /Border is ignored when /BS is present;
+        // shape and ink annotations write /BS below, so omit /Border for them).
+        if (annotation.Border is not null
+            && annotation is not (PdfSquareAnnotation or PdfCircleAnnotation or PdfLineAnnotation or PdfInkAnnotation))
         {
             writer.Write($"   /Border [{annotation.Border.HorizontalRadius:F1} {annotation.Border.VerticalRadius:F1} {annotation.Border.Width:F1}");
             if (annotation.Border.DashPattern is { Length: > 0 })

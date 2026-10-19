@@ -176,6 +176,8 @@ internal class PdfParser(PdfLexer lexer)
             // Check for indirect reference (N G R)
             case PdfTokenType.R:
                 NextToken(); // Consume R
+                if (generationNumber < 0)
+                    throw new PdfParseException($"Invalid negative generation number in indirect reference: {generationNumber}");
                 // Object number 0 is the head of the cross-reference free list and is never a real
                 // object, so "0 0 R" (emitted by some producers, e.g. Nlview) is a reference to the
                 // null object (ISO 32000-1 §7.3.10). PdfIndirectReference requires a positive object
@@ -187,6 +189,8 @@ internal class PdfParser(PdfLexer lexer)
             case PdfTokenType.Obj:
             {
                 NextToken(); // Consume obj
+                if (generationNumber < 0)
+                    throw new PdfParseException($"Invalid negative generation number in indirect object header: {generationNumber}");
 
                 // Set current object context for string decryption
                 int prevObjectNumber = _currentObjectNumber;

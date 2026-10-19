@@ -34,6 +34,8 @@ public sealed class RecordingRenderTarget : IRenderTarget
     private int _saveDepth;
     private bool _softMaskActive;
     private int _softMaskOwnerDepth = -1;
+    private SoftMaskPushCommand? _activeSoftMask;
+    private readonly List<(int Depth, ClipCommand Clip)> _clipsSinceSoftMask = [];
 
     public RecordingRenderTarget(PdfDocument? document)
     {
@@ -96,6 +98,8 @@ public sealed class RecordingRenderTarget : IRenderTarget
         _saveDepth = 0;
         _softMaskActive = false;
         _softMaskOwnerDepth = -1;
+        _activeSoftMask = null;
+        _clipsSinceSoftMask.Clear();
     }
 
     public (int width, int height, double scale) GetPageDimensions() => _dims;
@@ -132,7 +136,13 @@ public sealed class RecordingRenderTarget : IRenderTarget
     }
 
     public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
-    { if (!path.IsEmpty) _commands.Add(new ClipCommand(Snap(path), evenOdd)); }
+    {
+        if (path.IsEmpty) return;
+        var clip = new ClipCommand(Snap(path), evenOdd);
+        _commands.Add(clip);
+        if (_softMaskActive)
+            _clipsSinceSoftMask.Add((_saveDepth, clip));
+    }
 
     public void PaintShading(ShadingDescriptor shading, PdfGraphicsState state)
     { _commands.Add(new ShadingCommand(shading, state.Clone())); }
@@ -146,8 +156,18 @@ public sealed class RecordingRenderTarget : IRenderTarget
     {
         // A mask owned by the scope being exited is applied and popped BEFORE the state restore
         // (SoftMaskManager.OnBeforeRestore). The depth match keeps a mask alive across inner q/Q.
-        if (_softMaskActive && _saveDepth == _softMaskOwnerDepth)
-            PopActiveSoftMask();
+        if (_softMaskActive)
+        {
+            if (_saveDepth == _softMaskOwnerDepth)
+            {
+                PopActiveSoftMask();
+            }
+            else
+            {
+                int closingDepth = _saveDepth;
+                _clipsSinceSoftMask.RemoveAll(c => c.Depth >= closingDepth);
+            }
+        }
         _commands.Add(new RestoreCommand());
         if (_saveDepth > 0) _saveDepth--;
     }
@@ -200,7 +220,50 @@ public sealed class RecordingRenderTarget : IRenderTarget
         // contract): never emit ProofCmyk alongside Cmyk or Spots.
         byte[]? proof = cmyk is not null || spots is not null ? null : proofCmyk;
 
-        _commands.Add(new ImageCommand(img.Rgba, img.Width, img.Height, img.Alpha, state.Ctm, state.Clone(), cmyk, plates, spots, proof));
+        var imageCmd = new ImageCommand(img.Rgba, img.Width, img.Height, img.Alpha, state.Ctm, state.Clone(), cmyk, plates, spots, proof);
+
+        // Per ISO 32000-2:2020 (EC-3, Issue #215) Clause 8.9.5.1:
+        // "If SMask is present, it overrides the current soft mask in the graphics state as well as
+        // the image's Mask entry, if any."
+        // When a graphics-state soft mask is active and the image carries its own effective /SMask,
+        // temporarily pop the graphics-state soft mask layer (unwinding any inner save scopes first so
+        // the canvas Save/SaveLayer stack stays strictly balanced), draw the image with any clips that
+        // were active in that scope, and then re-push the graphics-state soft mask and inner save/clip scopes.
+        if (_softMaskActive && image.HasEffectiveSMask && _activeSoftMask is { } activeMask)
+        {
+            int innerSaves = _saveDepth - _softMaskOwnerDepth;
+            for (var i = 0; i < innerSaves; i++)
+                _commands.Add(new RestoreCommand());
+            _commands.Add(new SoftMaskPopCommand());
+
+            if (_clipsSinceSoftMask.Count > 0)
+            {
+                _commands.Add(new SaveCommand());
+                foreach ((_, ClipCommand clip) in _clipsSinceSoftMask)
+                    _commands.Add(clip);
+                _commands.Add(imageCmd);
+                _commands.Add(new RestoreCommand());
+            }
+            else
+            {
+                _commands.Add(imageCmd);
+            }
+
+            _commands.Add(activeMask);
+            for (var d = _softMaskOwnerDepth; d <= _saveDepth; d++)
+            {
+                if (d > _softMaskOwnerDepth)
+                    _commands.Add(new SaveCommand());
+                foreach ((int depth, ClipCommand clip) in _clipsSinceSoftMask)
+                {
+                    if (depth == d)
+                        _commands.Add(clip);
+                }
+            }
+            return;
+        }
+
+        _commands.Add(imageCmd);
     }
 
     public void ApplyCtm(Matrix3x2 ctm) { }
@@ -218,9 +281,12 @@ public sealed class RecordingRenderTarget : IRenderTarget
         sub.BeginPage(_begin.PageNumber, _begin.Width, _begin.Height, _begin.Scale,
             _begin.CropOffsetX, _begin.CropOffsetY, _begin.Rotation);
         renderMaskContent(sub);
-        _commands.Add(new SoftMaskPushCommand(maskSubtype, new PageDrawList(sub._begin, sub._commands.ToList())));
+        var pushCmd = new SoftMaskPushCommand(maskSubtype, new PageDrawList(sub._begin, sub._commands.ToList()));
+        _commands.Add(pushCmd);
         _softMaskActive = true;
         _softMaskOwnerDepth = _saveDepth;
+        _activeSoftMask = pushCmd;
+        _clipsSinceSoftMask.Clear();
     }
 
     public void ClearSoftMask() => PopActiveSoftMask();
@@ -245,5 +311,7 @@ public sealed class RecordingRenderTarget : IRenderTarget
         _commands.Add(new SoftMaskPopCommand());
         _softMaskActive = false;
         _softMaskOwnerDepth = -1;
+        _activeSoftMask = null;
+        _clipsSinceSoftMask.Clear();
     }
 }
