@@ -108,7 +108,7 @@ jobs:
         git -C veraPDF-corpus fetch -q --depth 1 origin staging
         if ! git -C veraPDF-corpus cat-file -e "${CORPUS_COMMIT}^{commit}" 2>/dev/null; then
           echo "pinned commit $CORPUS_COMMIT is not at the staging tip — deepening history"
-          git -C veraPDF-corpus fetch -q origin staging
+          git -C veraPDF-corpus fetch -q --unshallow origin staging
         fi
         git -C veraPDF-corpus checkout -q "$CORPUS_COMMIT"
 
