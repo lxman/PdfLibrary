@@ -539,7 +539,7 @@ internal class PdfRenderer : PdfContentProcessor
 
     protected override void OnStroke()
     {
-        if (_currentPath.IsEmpty) return;
+        if (_currentPath.IsEmpty) { ClearPendingClip(); return; }
 
         // Apply clipping first if pending (W S or W* S sequence)
         if (PendingClip)
@@ -558,7 +558,7 @@ internal class PdfRenderer : PdfContentProcessor
 
     protected override void OnFill(bool evenOdd)
     {
-        if (_currentPath.IsEmpty) return;
+        if (_currentPath.IsEmpty) { ClearPendingClip(); return; }
 
         // Apply clipping first if pending (W f or W* f* sequence)
         if (PendingClip)
@@ -748,7 +748,7 @@ internal class PdfRenderer : PdfContentProcessor
 
     protected override void OnFillAndStroke()
     {
-        if (_currentPath.IsEmpty) return;
+        if (_currentPath.IsEmpty) { ClearPendingClip(); return; }
 
         // Apply clipping first if pending (W B or W* B* sequence)
         if (PendingClip)
@@ -1473,7 +1473,7 @@ internal class PdfRenderer : PdfContentProcessor
 
             // Build the complete transformation matrix for this glyph
             // Glyph space → Text space (via FontMatrix) → User space (via TextMatrix × fontSize) → Device space (via CTM)
-            var fontSizeMatrix = new Matrix3x2(fontSize, 0, 0, fontSize, 0, 0);
+            var fontSizeMatrix = new Matrix3x2(fontSize * (float)(CurrentState.HorizontalScaling / 100.0), 0, 0, fontSize, 0, (float)CurrentState.TextRise);
 
             // Calculate glyph position: FontMatrix * FontSize * TextMatrix * CTM
             Matrix3x2 glyphMatrix = fontMatrixM * fontSizeMatrix * CurrentState.TextMatrix * CurrentState.Ctm;
@@ -1552,7 +1552,7 @@ internal class PdfRenderer : PdfContentProcessor
 
                         // Calculate the glyph transformation matrix
                         var fontSize = (float)CurrentState.FontSize;
-                        var fontSizeMatrix = new Matrix3x2(fontSize, 0, 0, fontSize, 0, 0);
+                        var fontSizeMatrix = new Matrix3x2(fontSize * (float)(CurrentState.HorizontalScaling / 100.0), 0, 0, fontSize, 0, (float)CurrentState.TextRise);
                         Matrix3x2 glyphMatrix = fontMatrixM * fontSizeMatrix * CurrentState.TextMatrix * CurrentState.Ctm;
 
                         // Execute the CharProc content stream
@@ -1623,6 +1623,8 @@ internal class PdfRenderer : PdfContentProcessor
                     Ctm = glyphMatrix
                 }
             };
+            charProcRenderer.CurrentState = CurrentState.Clone();
+            charProcRenderer.CurrentState.Ctm = glyphMatrix;
 
             // Save render target state
             _target.SaveState();

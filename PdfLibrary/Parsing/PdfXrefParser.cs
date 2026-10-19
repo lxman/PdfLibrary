@@ -12,14 +12,14 @@ namespace PdfLibrary.Parsing;
 internal class PdfXrefParser
 {
     private readonly Stream _stream;
+    private readonly PdfDocument? _document;
 
-    // Note: The document parameter is kept for API compatibility but is no longer used.
-    // We intentionally do NOT resolve references during xref parsing because the xref table
-    // is still being built at that point.
+    // Note: We intentionally do NOT resolve indirect references during xref parsing because the
+    // xref table is still being built at that point; _document is used only to check PDF version.
     public PdfXrefParser(Stream stream, PdfDocument? document = null)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
-        // document parameter intentionally ignored - see note above
+        _document = document;
     }
 
     /// <summary>
@@ -197,6 +197,11 @@ internal class PdfXrefParser
             throw new PdfParseException("Stream is not a cross-reference stream (/Type /XRef missing)");
         }
 
+        if (_document is { Version.Major: >= 2 })
+        {
+            ValidatePdf20XRefStreamDictionary(xrefStream.Dictionary);
+        }
+
         // Get /W array - specifies field widths [type, field2, field3]
         if (!xrefStream.Dictionary.TryGetValue(new PdfName("W"), out PdfObject wObj) ||
             wObj is not PdfArray { Count: 3 } wArray)
@@ -247,6 +252,53 @@ internal class PdfXrefParser
         // The XRef stream's dictionary contains the trailer information
         // (Root, Info, Size, etc. per ISO 32000-1 section 7.5.8)
         return new PdfXrefParseResult(table, xrefStream.Dictionary, true);
+    }
+
+    private static readonly string[] Pdf20XRefProhibitedKeys = ["F", "FFilter", "FDecodeParms"];
+    private static readonly string[] Pdf20XRefDirectOnlyKeys =
+        ["Length", "Filter", "DecodeParms", "DL", "Type", "Size", "Index", "Prev", "W"];
+
+    /// <summary>
+    /// Validates ISO 32000-2:2020 (EC-3, Issues #246 and #720) Clause 7.5.8.2 requirements:
+    /// /F (/FFilter, /FDecodeParms) shall not be present, and all Table 5 / Table 17 entries
+    /// (plus any array elements and subdictionary values) shall be direct objects.
+    /// </summary>
+    private static void ValidatePdf20XRefStreamDictionary(PdfDictionary dict)
+    {
+        foreach (string prohibited in Pdf20XRefProhibitedKeys)
+        {
+            if (dict.ContainsKey(new PdfName(prohibited)))
+                throw new PdfParseException($"XRef stream dictionary in PDF 2.0 shall not contain /{prohibited} (ISO 32000-2 7.5.8.2)");
+        }
+
+        foreach (string key in Pdf20XRefDirectOnlyKeys)
+        {
+            if (dict.TryGetValue(new PdfName(key), out PdfObject val) && ContainsIndirectReference(val))
+                throw new PdfParseException($"XRef stream dictionary entry /{key} in PDF 2.0 must be a direct object (ISO 32000-2 7.5.8.2)");
+        }
+    }
+
+    private static bool ContainsIndirectReference(PdfObject obj)
+    {
+        if (obj is PdfIndirectReference)
+            return true;
+        if (obj is PdfArray arr)
+        {
+            for (var i = 0; i < arr.Count; i++)
+            {
+                if (ContainsIndirectReference(arr[i]))
+                    return true;
+            }
+        }
+        else if (obj is PdfDictionary subDict)
+        {
+            foreach (KeyValuePair<PdfName, PdfObject> kvp in subDict)
+            {
+                if (ContainsIndirectReference(kvp.Value))
+                    return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

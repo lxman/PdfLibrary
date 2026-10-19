@@ -73,6 +73,59 @@ internal static class AnnotationContentBuilder
     }
 
     /// <summary>
+    /// Polygon or PolyLine from local vertices (already translated into BBox space).
+    /// </summary>
+    public static string PolygonFromVertices(double lw, double[]? stroke, double[]? fill, IReadOnlyList<(double X, double Y)> vertices, bool closed)
+    {
+        var sb = new StringBuilder();
+        sb.Append("q\n").Append(Num(lw)).Append(" w\n1 J\n1 j\n");
+        AppendFillStroke(sb, stroke, fill);
+        for (int i = 0; i < vertices.Count; i++)
+            sb.Append(Num(vertices[i].X)).Append(' ').Append(Num(vertices[i].Y)).Append(i == 0 ? " m\n" : " l\n");
+        if (closed)
+            sb.Append("h\n");
+        sb.Append(closed ? PaintOp(stroke, fill) : "S").Append("\nQ");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Polygon or PolyLine from a PDF 2.0 <c>/Path</c> array (ISO 32000-2:2020 12.5.6.9, Table 178).
+    /// Each element is an array of local coordinates: 2 numbers (<c>m</c> if first in subpath, else <c>l</c>),
+    /// 6 numbers (<c>c</c>), or 0 numbers (<c>h</c>).
+    /// </summary>
+    public static string PolygonFromPath(double lw, double[]? stroke, double[]? fill, IReadOnlyList<double[]> pathEntries, bool closed)
+    {
+        var sb = new StringBuilder();
+        sb.Append("q\n").Append(Num(lw)).Append(" w\n1 J\n1 j\n");
+        AppendFillStroke(sb, stroke, fill);
+        bool expectMove = true;
+        foreach (double[] seg in pathEntries)
+        {
+            if (seg.Length == 0)
+            {
+                sb.Append("h\n");
+                expectMove = true;
+            }
+            else if (seg.Length == 2)
+            {
+                sb.Append(Num(seg[0])).Append(' ').Append(Num(seg[1])).Append(expectMove ? " m\n" : " l\n");
+                expectMove = false;
+            }
+            else if (seg.Length == 6)
+            {
+                sb.Append(Num(seg[0])).Append(' ').Append(Num(seg[1])).Append(' ')
+                  .Append(Num(seg[2])).Append(' ').Append(Num(seg[3])).Append(' ')
+                  .Append(Num(seg[4])).Append(' ').Append(Num(seg[5])).Append(" c\n");
+                expectMove = false;
+            }
+        }
+        if (closed && !expectMove)
+            sb.Append("h\n");
+        sb.Append(closed ? PaintOp(stroke, fill) : "S").Append("\nQ");
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// FreeText layout using font resource <paramref name="resName"/>. Honors the FreeText line
     /// separators in <paramref name="text"/> (CR, LF, or CRLF — ISO 32000-1 §12.7.3.3): each line is
     /// shown by its own operator with a leading-based advance, since <c>Tj</c> does not break lines.

@@ -85,6 +85,30 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
                 }
             }
         }
+
+        // ISO 32000-2:2020 (EC-3, Issue #481) Clause 12.5.6.15, Table 187:
+        // In PDF 2.0, FileAttachment annotations shall always include an embedded file stream (/EF in /FS).
+        if (context.Document.Version >= PdfVersion.Pdf20)
+        {
+            foreach (var page in context.Pages)
+            {
+                if (context.Resolve(page.Dictionary.Get("Annots")) is not PdfArray annots)
+                    continue;
+                foreach (PdfObject a in annots)
+                {
+                    if (context.Resolve(a) is not PdfDictionary annot)
+                        continue;
+                    if (context.ResolveName(annot.Get("Subtype")) != "FileAttachment")
+                        continue;
+                    if (context.Resolve(annot.Get("FS")) is PdfDictionary fsSpec
+                        && context.Resolve(fsSpec.Get("EF")) is not PdfDictionary)
+                    {
+                        yield return Error(context, fsSpec,
+                            "A FileAttachment annotation's file specification must contain an /EF embedded file stream dictionary in PDF 2.0 (ISO 32000-2 12.5.6.15).");
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
