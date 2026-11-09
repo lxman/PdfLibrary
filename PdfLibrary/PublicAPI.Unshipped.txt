@@ -1,3 +1,4 @@
 #nullable enable
 PdfLibrary.Content.TextFragment.BaseFontName.get -> string?
 PdfLibrary.Content.TextFragment.BaseFontName.init -> void
+PdfLibrary.Rendering.Icc.CmykProfileProvider.NewScope() -> System.IDisposable!

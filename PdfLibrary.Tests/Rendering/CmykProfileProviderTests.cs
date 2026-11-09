@@ -77,4 +77,64 @@ public class CmykProfileProviderTests
         IccProfile profile = provider.GetProfile();   // must not throw
         Assert.Equal(4, IccTransform.Create(profile, BuiltInProfiles.Srgb).InputChannels);
     }
+
+    [Fact]
+    public void NewScope_restores_prior_ambient_on_dispose()
+    {
+        var provider = new CmykProfileProvider();
+        var outerBytes = new byte[] { 1, 2, 3 };
+        var innerBytes = new byte[] { 4, 5, 6 };
+
+        using (provider.NewScope())
+        {
+            provider.OverrideProfileBytes = outerBytes;
+            using (provider.NewScope())
+            {
+                provider.OverrideProfileBytes = innerBytes;
+                Assert.Same(innerBytes, provider.OverrideProfileBytes);
+            }
+
+            Assert.Same(outerBytes, provider.OverrideProfileBytes);
+        }
+
+        Assert.Null(provider.OverrideProfileBytes);
+    }
+
+    [Fact]
+    public async Task NewScope_isolates_concurrent_flows()
+    {
+        var provider = new CmykProfileProvider();
+        var bytesA = new byte[] { 10, 20, 30 };
+        var bytesB = new byte[] { 40, 50, 60 };
+        var startB = new TaskCompletionSource();
+        var bWrote = new TaskCompletionSource();
+
+        async Task<byte[]?> FlowA()
+        {
+            using (provider.NewScope())
+            {
+                provider.OverrideProfileBytes = bytesA;
+                startB.TrySetResult();
+                await bWrote.Task;
+                return provider.OverrideProfileBytes;
+            }
+        }
+
+        async Task<byte[]?> FlowB()
+        {
+            await startB.Task;
+            using (provider.NewScope())
+            {
+                provider.OverrideProfileBytes = bytesB;
+                bWrote.TrySetResult();
+                return provider.OverrideProfileBytes;
+            }
+        }
+
+        Task<byte[]?> a = Task.Run(FlowA);
+        Task<byte[]?> b = Task.Run(FlowB);
+        Assert.Same(bytesA, await a);
+        Assert.Same(bytesB, await b);
+        Assert.Null(provider.OverrideProfileBytes);
+    }
 }

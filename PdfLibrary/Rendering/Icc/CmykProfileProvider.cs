@@ -8,30 +8,40 @@ namespace PdfLibrary.Rendering.Icc;
 /// that carries no embedded profile. Precedence: <see cref="OverrideProfileBytes"/> (in-memory) →
 /// <see cref="OverridePath"/> (disk) → the bundled CC0 default. Cached; setting either override
 /// invalidates the cache. Thread-safe.
+/// <para>
+/// Mutable override fields live in a per-flow <see cref="State"/> backed by an
+/// <see cref="AsyncLocal{T}"/> that falls back to the instance's process default. Production never
+/// opens a scope, so every read/write hits the default state directly. Tests that mutate
+/// <see cref="OverrideProfileBytes"/> or <see cref="OverridePath"/> on <see cref="Default"/> open an
+/// isolated <see cref="NewScope"/> so concurrent tests never race on the shared provider.
+/// </para>
 /// </summary>
 public sealed class CmykProfileProvider
 {
     /// <summary>Process-wide default instance.</summary>
     public static CmykProfileProvider Default { get; } = new();
 
-    private readonly object _lock = new();
-    private byte[]? _overrideBytes;
-    private string? _overridePath;
-    private IccProfile? _cached;
-    private string? _cachedKey;
+    private readonly State _defaultState = new();
+    private readonly AsyncLocal<State?> _scoped = new();
+    private State Current => _scoped.Value ?? _defaultState;
 
     /// <summary>In-memory CMYK profile bytes that override both the path and the bundled default.</summary>
     public byte[]? OverrideProfileBytes
     {
-        get { lock (_lock) { return _overrideBytes; } }
+        get
+        {
+            State s = Current;
+            lock (s.Lock) { return s.OverrideBytes; }
+        }
         set
         {
-            lock (_lock)
+            State s = Current;
+            lock (s.Lock)
             {
-                if (ReferenceEquals(_overrideBytes, value)) return;
-                _overrideBytes = value;
-                _cached = null;
-                _cachedKey = null;
+                if (ReferenceEquals(s.OverrideBytes, value)) return;
+                s.OverrideBytes = value;
+                s.Cached = null;
+                s.CachedKey = null;
             }
         }
     }
@@ -39,15 +49,20 @@ public sealed class CmykProfileProvider
     /// <summary>Optional path to a CMYK <c>.icc</c> profile that overrides the bundled default.</summary>
     public string? OverridePath
     {
-        get { lock (_lock) { return _overridePath; } }
+        get
+        {
+            State s = Current;
+            lock (s.Lock) { return s.OverridePath; }
+        }
         set
         {
-            lock (_lock)
+            State s = Current;
+            lock (s.Lock)
             {
-                if (_overridePath == value) return;
-                _overridePath = value;
-                _cached = null;
-                _cachedKey = null;
+                if (s.OverridePath == value) return;
+                s.OverridePath = value;
+                s.Cached = null;
+                s.CachedKey = null;
             }
         }
     }
@@ -55,15 +70,59 @@ public sealed class CmykProfileProvider
     /// <summary>Returns the active CMYK profile, parsing and caching it on first use.</summary>
     public IccProfile GetProfile()
     {
-        lock (_lock)
+        State s = Current;
+        lock (s.Lock)
         {
-            string key = _overrideBytes is not null ? "<bytes>" : _overridePath ?? "<bundled>";
-            if (_cached is not null && _cachedKey == key) return _cached;
+            string key = s.OverrideBytes is not null ? "<bytes>" : s.OverridePath ?? "<bundled>";
+            if (s.Cached is not null && s.CachedKey == key) return s.Cached;
 
-            IccProfile profile = Load(_overrideBytes, _overridePath);
-            _cached = profile;
-            _cachedKey = key;
+            IccProfile profile = Load(s.OverrideBytes, s.OverridePath);
+            s.Cached = profile;
+            s.CachedKey = key;
             return profile;
+        }
+    }
+
+    /// <summary>
+    /// Opens an isolated ambient copy of the CMYK profile override state for the calling async flow,
+    /// seeded from the current values. Disposing restores the prior ambient state. Every test that
+    /// writes <see cref="OverrideProfileBytes"/> or <see cref="OverridePath"/> on <see cref="Default"/>
+    /// must open this first so concurrent tests never race on the process default.
+    /// </summary>
+    public IDisposable NewScope()
+    {
+        State? prior = _scoped.Value;
+        State source = prior ?? _defaultState;
+        State next;
+        lock (source.Lock)
+        {
+            next = new State
+            {
+                OverrideBytes = source.OverrideBytes,
+                OverridePath = source.OverridePath,
+                Cached = source.Cached,
+                CachedKey = source.CachedKey
+            };
+        }
+
+        _scoped.Value = next;
+        return new Scope(this, prior);
+    }
+
+    private sealed class State
+    {
+        public readonly object Lock = new();
+        public byte[]? OverrideBytes;
+        public string? OverridePath;
+        public IccProfile? Cached;
+        public string? CachedKey;
+    }
+
+    private sealed class Scope(CmykProfileProvider owner, State? prior) : IDisposable
+    {
+        public void Dispose()
+        {
+            owner._scoped.Value = prior;
         }
     }
 

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.6.6] - 2026-11-09
+
+### Added
+- `CmykProfileProvider.NewScope()` opens an isolated `AsyncLocal`-backed ambient copy of the CMYK profile override state (`OverrideProfileBytes` and `OverridePath`) for the calling async flow, restoring the prior ambient state on disposal so concurrent tests never race on `CmykProfileProvider.Default`.
+
 ## [2.6.5] - 2026-11-01
 
 ### Changed
