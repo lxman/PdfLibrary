@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.6.7] - 2026-11-15
+
+### Changed
+- Bump `System.Text.Json` to 10.0.15, `Microsoft.SourceLink.GitHub` to 10.0.404, `Microsoft.NET.Test.Sdk` to 18.12.0, and `xunit.v3` to 4.0.3.
+
 ## [2.6.6] - 2026-11-09
 
 ### Added
