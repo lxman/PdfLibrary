@@ -14,10 +14,11 @@ jobs:
     runs-on: windows-latest
     permissions:
       id-token: write  # Required for NuGet trusted publishing
+      contents: write  # Required to attach .nupkg/.snupkg assets to the GitHub Release
 
     defaults:
       run:
-        shell: bash   # use bash (available on the Windows runner) for the sed/version steps
+        shell: bash   # use bash (available on the Windows runner) for default CLI steps
 
     steps:
     - name: Checkout
@@ -37,11 +38,52 @@ jobs:
         VERSION=${GITHUB_REF_NAME#v}
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-    - name: Update package versions
+    - name: Verify versions, PublicAPI.Unshipped.txt, and inject CHANGELOG release notes
+      shell: pwsh
+      env:
+        RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
       run: |
-        # Update version in the SHIPPED package csproj files to match the tag.
-        sed -i "s|<Version>.*</Version>|<Version>${{ steps.version.outputs.VERSION }}</Version>|g" PdfLibrary/PdfLibrary.csproj
-        sed -i "s|<Version>.*</Version>|<Version>${{ steps.version.outputs.VERSION }}</Version>|g" PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj
+        $ErrorActionPreference = 'Stop'
+        $ver = $env:RELEASE_VERSION
+        foreach ($csproj in @('PdfLibrary/PdfLibrary.csproj', 'PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj')) {
+          $raw = Get-Content -LiteralPath $csproj -Raw -Encoding utf8
+          if ($raw -notmatch '<Version>\s*([^<]+?)\s*</Version>') {
+            throw "Missing <Version> in $csproj"
+          }
+          if ($Matches[1] -ne $ver) {
+            throw "$csproj <Version> is '$($Matches[1])', expected '$ver' from tag $($env:GITHUB_REF_NAME)"
+          }
+        }
+        $unshippedFiles = Get-ChildItem -Filter 'PublicAPI.Unshipped.txt' -Recurse | Where-Object {
+          $_.FullName -notmatch '(\\|/)(bin|obj)(\\|/)'
+        }
+        foreach ($f in $unshippedFiles) {
+          $nonCommentLines = @(Get-Content -LiteralPath $f.FullName -Encoding utf8 | Where-Object {
+            $t = $_.Trim()
+            $t -and -not $t.StartsWith('#')
+          })
+          if ($nonCommentLines.Count -gt 0) {
+            throw "Unshipped public APIs remain in $($f.FullName):`n$($nonCommentLines -join "`n")"
+          }
+        }
+        $changelog = Get-Content -LiteralPath 'CHANGELOG.md' -Raw -Encoding utf8
+        $escapedVer = [regex]::Escape($ver)
+        $pattern = "(?ms)^##\s+\[?$escapedVer\]?[^\r\n]*\r?\n(.*?)(?=^##\s+|\z)"
+        if ($changelog -notmatch $pattern) {
+          throw "Missing CHANGELOG.md section for version $ver"
+        }
+        $notes = ($Matches[1] -replace "\r\n", "`n").Trim()
+        if (-not $notes) {
+          throw "CHANGELOG.md section for version $ver is empty"
+        }
+        $escapedNotes = [System.Security.SecurityElement]::Escape($notes)
+        $corePath = 'PdfLibrary/PdfLibrary.csproj'
+        $coreRaw = Get-Content -LiteralPath $corePath -Raw -Encoding utf8
+        if ($coreRaw -notmatch '<PackageReleaseNotes>.*?</PackageReleaseNotes>') {
+          throw "Missing <PackageReleaseNotes> element in $corePath"
+        }
+        $updatedCore = [regex]::Replace($coreRaw, '(?s)<PackageReleaseNotes>.*?</PackageReleaseNotes>', "<PackageReleaseNotes>$escapedNotes</PackageReleaseNotes>", 1)
+        [System.IO.File]::WriteAllText((Resolve-Path $corePath).Path, $updatedCore, [System.Text.UTF8Encoding]::new($false))
 
     - name: Restore dependencies
       run: |
@@ -57,6 +99,26 @@ jobs:
 
     - name: Run tests
       run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --filter 'Category!=LocalOnly'
+
+    - name: Run WPF and bundled assembly tests
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $testProjects = @(
+          'PdfLibrary.Rendering.Wpf.Tests/PdfLibrary.Rendering.Wpf.Tests.csproj',
+          'FontParser.Tests/FontParser.Tests.csproj',
+          'ICCSharp.Tests/ICCSharp.Tests.csproj',
+          'ImageLibrary/CcittCodec.Tests/CcittCodec.Tests.csproj',
+          'ImageLibrary/Jbig2Decoder.Tests/Jbig2Decoder.Tests.csproj',
+          'ImageLibrary/Jp2Codec.Tests/Jp2Codec.Tests.csproj',
+          'ImageLibrary/JpegCodec.Tests/JpegCodec.Tests.csproj',
+          'ImageLibrary/LzwCodec.Tests/LzwCodec.Tests.csproj',
+          'ImageLibrary/PixelResampler.Tests/PixelResampler.Tests.csproj'
+        )
+        foreach ($proj in $testProjects) {
+          dotnet test $proj --configuration Release --verbosity minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
 
     - name: Pack PdfLibrary
       run: dotnet pack PdfLibrary/PdfLibrary.csproj --configuration Release --no-build --output ./nupkg
@@ -101,3 +163,14 @@ jobs:
         dotnet nuget push "./nupkg/Lxman.PdfLibrary.${{ steps.version.outputs.VERSION }}.snupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
         dotnet nuget push "./nupkg/Lxman.PdfLibrary.Rendering.Wpf.${{ steps.version.outputs.VERSION }}.nupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
         dotnet nuget push "./nupkg/Lxman.PdfLibrary.Rendering.Wpf.${{ steps.version.outputs.VERSION }}.snupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+    - name: Attach packages to GitHub Release
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $assets = @(Get-ChildItem -Path './nupkg' -File | Where-Object { $_.Extension -in '.nupkg', '.snupkg' } | ForEach-Object { $_.FullName })
+        if ($assets.Count -eq 0) { throw 'No .nupkg or .snupkg files found in ./nupkg' }
+        gh release upload "${{ github.ref_name }}" @assets --clobber
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

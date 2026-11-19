@@ -39,6 +39,21 @@ jobs:
       # Parity tests run in the dedicated 'parity' job below (they need the corpus); exclude them here.
       run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --filter 'Category!=LocalOnly&Category!=Parity'
 
+    - name: Run bundled assembly tests
+      run: |
+        for proj in \
+          FontParser.Tests/FontParser.Tests.csproj \
+          ICCSharp.Tests/ICCSharp.Tests.csproj \
+          ImageLibrary/CcittCodec.Tests/CcittCodec.Tests.csproj \
+          ImageLibrary/Jbig2Decoder.Tests/Jbig2Decoder.Tests.csproj \
+          ImageLibrary/Jp2Codec.Tests/Jp2Codec.Tests.csproj \
+          ImageLibrary/JpegCodec.Tests/JpegCodec.Tests.csproj \
+          ImageLibrary/LzwCodec.Tests/LzwCodec.Tests.csproj \
+          ImageLibrary/PixelResampler.Tests/PixelResampler.Tests.csproj
+        do
+          dotnet test "$proj" --configuration Release --verbosity minimal
+        done
+
   # Windows-only: the WPF render target (shipped as Lxman.PdfLibrary.Rendering.Wpf) and its tests.
   build-windows:
     runs-on: windows-latest

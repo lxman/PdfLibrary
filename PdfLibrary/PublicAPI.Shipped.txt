@@ -1106,6 +1106,8 @@ PdfLibrary.Content.TextExtractionResult.ReplacementCharacterCount.get -> int
 PdfLibrary.Content.TextExtractionResult.Text.get -> string!
 PdfLibrary.Content.TextExtractionResult.UnexpectedControlCharacterCount.get -> int
 PdfLibrary.Content.TextFragment
+PdfLibrary.Content.TextFragment.BaseFontName.get -> string?
+PdfLibrary.Content.TextFragment.BaseFontName.init -> void
 PdfLibrary.Content.TextFragment.FontName.get -> string?
 PdfLibrary.Content.TextFragment.FontName.init -> void
 PdfLibrary.Content.TextFragment.FontSize.get -> double
@@ -2034,6 +2036,7 @@ PdfLibrary.Rendering.GroupCommand.Info.init -> void
 PdfLibrary.Rendering.Icc.CmykProfileProvider
 PdfLibrary.Rendering.Icc.CmykProfileProvider.CmykProfileProvider() -> void
 PdfLibrary.Rendering.Icc.CmykProfileProvider.GetProfile() -> ICCSharp.Profile.IccProfile!
+PdfLibrary.Rendering.Icc.CmykProfileProvider.NewScope() -> System.IDisposable!
 PdfLibrary.Rendering.Icc.CmykProfileProvider.OverridePath.get -> string?
 PdfLibrary.Rendering.Icc.CmykProfileProvider.OverridePath.set -> void
 PdfLibrary.Rendering.Icc.CmykProfileProvider.OverrideProfileBytes.get -> byte[]?
