@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.6.8] - 2026-11-22
+
+### Changed
+- Promote `TextFragment.BaseFontName` and `CmykProfileProvider.NewScope()` to `PublicAPI.Shipped.txt`, run bundled assembly tests in CI and release workflows, attach `.nupkg`/`.snupkg` assets to GitHub Releases, and bump `coverlet.collector` to 10.1.1.
+
 ## [2.6.7] - 2026-11-15
 
 ### Changed
